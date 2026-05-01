@@ -1,0 +1,603 @@
+Good call—dropping microservices will keep your project **clean, buildable, and still very impressive**.
+Below is a **single, well-structured backend design** with *every feature you discussed*, explained simply + how to implement.
+
+---
+
+# 🚀 FINAL ARCHITECTURE (Single Backend)
+
+```text
+Frontend (Flutter/Web)
+        ↓
+Backend (FastAPI)
+        ↓
+----------------------------------------
+| Auth (JWT)                          |
+| File Handling + Signed URLs         |
+| ACL (Role-Based Access)             |
+| AI Layer                            |
+| Audit Logs                          |
+| Analytics                           |
+----------------------------------------
+        ↓
+Supabase (DB + Storage)
+```
+
+---
+
+# 🧩 STEP 1: API-Based Backend (Foundation)
+
+## 🧠 Idea
+
+> Everything goes through your backend (no direct Supabase calls)
+
+## 🛠️ Use
+
+* FastAPI
+
+## ⚙️ Implementation
+
+### Create endpoints:
+
+```python
+POST /login
+POST /upload
+GET /file/{id}
+POST /refresh
+GET /stats
+```
+
+### Structure:
+
+```text
+backend/
+  ├── main.py
+  ├── routes/
+  ├── services/
+  ├── models/
+```
+
+---
+
+# 🔐 STEP 2: JWT Authentication + Refresh Tokens
+
+## 🧠 Idea
+
+> Login once → use tokens → refresh when expired
+
+## 🛠️ Use
+
+* JSON Web Token
+
+---
+
+## ⚙️ Implementation
+
+### Install:
+
+```bash
+pip install python-jose passlib
+```
+
+### On login:
+
+```python
+create_access_token(user_id, expires=15min)
+create_refresh_token(user_id, expires=7days)
+```
+
+### Endpoints:
+
+```python
+POST /login → returns access + refresh
+POST /refresh → returns new access token
+```
+
+### Protect routes:
+
+```python
+Authorization: Bearer <access_token>
+```
+
+---
+
+# 🔐 STEP 3: Role-Based Access + ACL
+
+## 🧠 Idea
+
+> Who can access which file?
+
+## 🛠️ Concepts
+
+* Role-Based Access Control
+* Access Control List
+
+---
+
+## ⚙️ Database Tables
+
+### users
+
+```text
+id | name | role
+```
+
+### files
+
+```text
+id | owner_id | type
+```
+
+### file_permissions
+
+```text
+file_id | user_id | permission
+```
+
+---
+
+## ⚙️ Backend Check
+
+```python
+def check_access(user_id, file_id):
+    if owner → allow
+    elif in file_permissions → allow
+    else → deny
+```
+
+---
+
+# 📜 STEP 4: Audit Logs
+
+## 🧠 Idea
+
+> Track everything
+
+## 🛠️ Use
+
+* HIPAA (concept inspiration)
+
+---
+
+## ⚙️ Table
+
+```text
+audit_logs:
+user_id
+action
+file_id
+timestamp
+ip
+device
+```
+
+---
+
+## ⚙️ Implementation
+
+Inside every endpoint:
+
+```python
+log_action(user_id, "upload", file_id)
+```
+
+---
+
+# 🔗 STEP 5: Signed URLs (Secure File Access)
+
+## 🧠 Idea
+
+> Temporary file access (30–60 sec)
+
+## 🛠️ Use
+
+* Supabase
+
+---
+
+## ⚙️ Implementation
+
+```python
+supabase.storage
+  .from('files')
+  .createSignedUrl(file_path, 60)
+```
+
+---
+
+## Flow:
+
+```text
+Request → check ACL → generate signed URL → return
+```
+
+---
+
+# 🤖 STEP 6: AI Layer (Smart System)
+
+## 🧠 Idea
+
+> AI improves decisions
+
+## 🛠️ Use
+
+* Natural Language Processing
+* Google Gemini API
+
+---
+
+## ⚙️ Features
+
+### 1. File Classification
+
+```python
+"Prescription" / "Report" / "Invoice"
+```
+
+### 2. Suspicious Detection
+
+```python
+if AI says "malicious":
+    reject upload
+```
+
+### 3. Text Extraction
+
+* Extract text → store for search
+
+---
+
+## Flow:
+
+```text
+Upload → AI analyze → tag → store
+```
+
+---
+
+# 📊 STEP 7: Dashboard Analytics
+
+## 🧠 Idea
+
+> Convert logs → insights
+
+---
+
+## ⚙️ APIs
+
+```python
+GET /stats/uploads
+GET /stats/users
+GET /stats/files
+```
+
+---
+
+## Metrics
+
+* Total uploads/downloads
+* Most active users
+* File trends
+
+---
+
+## Example Query
+
+```sql
+SELECT COUNT(*) FROM audit_logs WHERE action='upload';
+```
+
+---
+
+# 🧠 STEP 8: Smart Security (AI + Logs)
+
+## 🧠 Idea
+
+> Detect abnormal behavior
+
+---
+
+## Example
+
+```text
+User normally → 2 downloads/day
+Today → 200 downloads 🚨
+```
+
+---
+
+## Implementation
+
+```python
+if downloads > threshold:
+    flag user
+```
+
+---
+
+# 🧱 FINAL FOLDER STRUCTURE
+
+```text
+backend/
+  ├── main.py
+  ├── routes/
+  │     ├── auth.py
+  │     ├── files.py
+  │     ├── stats.py
+  ├── services/
+  │     ├── auth_service.py
+  │     ├── file_service.py
+  │     ├── ai_service.py
+  │     ├── log_service.py
+  ├── models/
+  ├── utils/
+```
+
+---
+
+# 🔥 FINAL PROJECT STRENGTH
+
+You now have:
+
+* ✅ Secure authentication (JWT)
+* ✅ Controlled file sharing (ACL)
+* ✅ Secure access (Signed URLs)
+* ✅ Full tracking (Audit Logs)
+* ✅ AI-powered system
+* ✅ Analytics dashboard
+* ✅ Clean backend architecture
+
+---
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+
+
+Got it — you want a **clean, copy-paste prompt** you can give to Antigravity (or any AI code tool) to implement everything properly.
+
+I’ll structure it like a **clear system instruction + requirements + modules + endpoints** so it generates correct code.
+
+---
+
+You are building a production-level backend system using FastAPI with Supabase integration. The system must be secure, modular, and scalable. Implement the following features step-by-step with clean architecture.
+
+---
+
+## PROJECT OVERVIEW
+
+Build a centralized backend API that handles authentication, file storage, secure access, AI processing, logging, and analytics. The frontend must NOT directly communicate with Supabase.
+
+---
+
+## TECH STACK
+
+Backend: FastAPI (Python)
+Database & Storage: Supabase
+Authentication: JWT (access + refresh tokens)
+AI Integration: Gemini API (for classification and detection)
+
+---
+
+## FOLDER STRUCTURE
+
+backend/
+├── main.py
+├── routes/
+│     ├── auth.py
+│     ├── files.py
+│     ├── stats.py
+├── services/
+│     ├── auth_service.py
+│     ├── file_service.py
+│     ├── ai_service.py
+│     ├── log_service.py
+├── models/
+├── utils/
+
+---
+
+## FEATURE 1: JWT AUTHENTICATION
+
+Implement secure authentication using JSON Web Tokens.
+
+Endpoints:
+POST /login
+
+* Input: email, password
+* Output: access_token (15 min), refresh_token (7 days)
+
+POST /refresh
+
+* Input: refresh_token
+* Output: new access_token
+
+Requirements:
+
+* Use hashed passwords
+* Protect all routes using Bearer token
+* Implement token expiry
+* Implement logout by invalidating refresh tokens
+
+---
+
+## FEATURE 2: ROLE-BASED ACCESS + ACL
+
+Implement fine-grained file access control.
+
+Database Tables:
+users(id, name, role)
+files(id, owner_id, type, path)
+file_permissions(file_id, user_id, permission)
+
+Permissions:
+
+* owner → full access
+* doctor → read/write
+* chemist → read-only
+
+Backend Logic:
+
+* Before accessing any file, check:
+
+  1. If user is owner → allow
+  2. Else check file_permissions → allow/deny
+
+---
+
+## FEATURE 3: FILE UPLOAD SYSTEM
+
+Endpoint:
+POST /upload
+
+Flow:
+
+1. Receive file
+2. Send file/text to AI service for:
+
+   * classification (report, prescription, etc.)
+   * suspicious detection
+3. If suspicious → reject upload
+4. Store file in Supabase
+5. Save metadata in database
+6. Log action in audit_logs
+
+---
+
+## FEATURE 4: SIGNED URL ACCESS
+
+Endpoint:
+GET /file/{id}
+
+Flow:
+
+1. Validate JWT
+2. Check ACL permissions
+3. Generate signed URL (valid 60 seconds)
+4. Return URL to user
+
+Important:
+
+* Do NOT expose direct storage URLs
+* Always generate temporary access links
+
+---
+
+## FEATURE 5: AUDIT LOGS
+
+Create audit_logs table:
+id, user_id, action, file_id, timestamp, ip_address, device
+
+Track:
+
+* login
+* upload
+* view
+* download
+* delete
+
+Implementation:
+
+* Every API action must call log_service
+* Automatically capture IP and device info
+
+---
+
+## FEATURE 6: AI INTEGRATION
+
+Use Gemini API for:
+
+1. File Classification
+
+* Input: extracted text from file
+* Output: label (report, prescription, invoice, etc.)
+
+2. Suspicious Detection
+
+* Detect malware-like or abnormal content
+* Reject unsafe uploads
+
+3. Text Extraction (if applicable)
+
+* Store extracted text for search and analytics
+
+---
+
+## FEATURE 7: ANALYTICS DASHBOARD APIs
+
+Create endpoints:
+
+GET /stats/uploads
+
+* Total uploads count
+
+GET /stats/downloads
+
+* Total downloads count
+
+GET /stats/users
+
+* Most active users
+
+GET /stats/files
+
+* Most accessed files
+
+Use audit_logs table for all analytics queries.
+
+---
+
+## FEATURE 8: SECURITY + AI MONITORING
+
+Implement basic anomaly detection:
+
+* If user performs unusually high activity (e.g., >100 downloads/day)
+  → flag user as suspicious
+
+* Store flagged users in a separate table or log
+
+---
+
+## GENERAL REQUIREMENTS
+
+* Use modular code (services layer for logic)
+* Add print/log statements for each step (for debugging)
+* Ensure all endpoints are secure
+* Use clean and readable code
+* Handle errors properly (invalid token, unauthorized access, etc.)
+
+---
+
+## FINAL GOAL
+
+The system should behave like a secure document management platform used in healthcare, education, or enterprise environments with:
+
+* Secure authentication
+* Controlled file sharing
+* AI-powered intelligence
+* Full audit tracking
+* Analytics dashboard
+
+---
+
+## END OF INSTRUCTION
+
+---
+
+### 🔥 How to use this
+
+* Copy → paste into Antigravity
+* It will generate:
+
+  * Backend structure
+  * APIs
+  * Logic
+
+---
+
+If you want next:
+I can give you a **short version (1-page prompt)** OR **step-by-step prompts (module-wise)** so generation becomes more accurate.
+
+python -m uvicorn main:app --reload --port 8000
