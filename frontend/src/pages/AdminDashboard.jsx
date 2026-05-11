@@ -8,7 +8,7 @@ import {
 } from 'recharts'
 import GlassSurface from '../components/GlassSurface'
 
-const COLORS = ['#34d399', '#3b82f6', '#facc15', '#ec4899', '#a855f7', '#06b6d4']
+const COLORS = ['#ffffff', 'rgba(255,255,255,0.7)', 'rgba(255,255,255,0.45)', 'rgba(255,255,255,0.3)', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0.1)']
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -48,6 +48,28 @@ export default function AdminDashboard() {
   const [analyticsMode, setAnalyticsMode] = useState('all') // 'all' | 'date'
   const [auditDateMode, setAuditDateMode] = useState('all') // 'all' | 'date'
   const [auditDate, setAuditDate] = useState(new Date().toISOString().split('T')[0])
+  
+  // Custom Calendar States
+  const [showCalendar, setShowCalendar] = useState(false)
+  const [calDate, setCalDate] = useState(new Date()) 
+  const calendarRef = useRef(null)
+
+  const [showAuditCalendar, setShowAuditCalendar] = useState(false)
+  const [auditCalDate, setAuditCalDate] = useState(new Date())
+  const auditCalendarRef = useRef(null)
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
+        setShowCalendar(false)
+      }
+      if (auditCalendarRef.current && !auditCalendarRef.current.contains(event.target)) {
+        setShowAuditCalendar(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const todayStr = new Date().toISOString().split('T')[0]
 
@@ -426,10 +448,10 @@ export default function AdminDashboard() {
       if (endpointRole === 'User' && !isUser) return
 
       let type = 'Success'
-      let color = '#34d399' // Green
-      if (status >= 300 && status < 400) { type = 'Redirect'; color = '#facc15' } // Yellow
-      else if (status >= 400 && status < 500) { type = 'Client'; color = '#3b82f6' } // Blue
-      else if (status >= 500) { type = 'Server'; color = '#ef4444' } // Red
+      let color = '#ffffff' // White
+      if (status >= 300 && status < 400) { type = 'Redirect'; color = 'rgba(255, 255, 255, 1)' } // Light gray
+      else if (status >= 400 && status < 500) { type = 'Client'; color = 'rgba(255, 255, 255, 0.85)' } // Mid gray
+      else if (status >= 500) { type = 'Server'; color = '#ef4444' } // Keep red for server errors
       
       const key = `${endpoint}-${type}`
       if (!counts[key]) counts[key] = { endpoint, type, color, count: 0 }
@@ -481,59 +503,252 @@ export default function AdminDashboard() {
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #2d2d2d; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3d3d3d; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          filter: invert(1) brightness(1.5);
+          cursor: pointer;
+          opacity: 0.6;
+          transition: opacity 0.2s;
+        }
+        input[type="date"]::-webkit-calendar-picker-indicator:hover {
+          opacity: 1;
+        }
       `}</style>
 
-      <div className="header" style={{ margin: '1.5rem 0', paddingBottom: '1rem', borderBottom: '1px solid #2d2d2d', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="header" style={{ margin: '0.1rem 0', paddingBottom: '0', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.6rem', letterSpacing: '-0.03em' }}>&#x1F6E0; Admin Control Panel</h1>
-          <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>
-            {currentTab === 'analytics'
-              ? analyticsMode === 'all'
-                ? `All-time overview · ${audits.length} total events`
-                : (selectedDate === todayStr
-                    ? `Today · ${filteredAudits.length} events`
-                    : `${new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · ${filteredAudits.length} events`)
-              : 'System Administration'
-            }
-          </p>
+          <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: '900', letterSpacing: '-0.04em', color: '#ffffff' }}>🛠 Admin Control Panel</h1>
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          {currentTab === 'analytics' && (
-            <>
-              {/* Date picker — always visible; picking a date activates date filter */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                <label style={{ fontSize: '0.7rem', color: '#52525b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Filter by Date</label>
-                <input
-                  type="date"
-                  value={analyticsMode === 'date' ? selectedDate : ''}
-                  max={todayStr}
-                  onChange={e => {
-                    if (e.target.value) {
-                      setSelectedDate(e.target.value)
-                      setAnalyticsMode('date')
-                    } else {
-                      setAnalyticsMode('all')
-                    }
-                  }}
-                  style={{ background: '#161616', color: analyticsMode === 'date' ? '#fff' : '#52525b', border: `1px solid ${analyticsMode === 'date' ? '#34d399' : '#2d2d2d'}`, borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none', transition: 'all 0.2s' }}
-                />
-              </div>
-              {/* Clear pill — only shown when a date is active */}
-              {analyticsMode === 'date' && (
-                <button
-                  onClick={() => setAnalyticsMode('all')}
-                  style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.4rem 0.85rem', fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                >
-                  × All Time
-                </button>
-              )}
-            </>
-          )}
-          <button className="btn btn-outline btn-sm" onClick={() => nav('/dashboard')} style={{ width: 'auto', borderRadius: '8px', padding: '0.5rem 1.25rem' }}>
-            &#8592; Back to Dashboard
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'flex-end' }}>
+          <button 
+            onClick={() => nav('/dashboard')} 
+            style={{ 
+              marginTop: '4px',
+              width: 'auto', 
+              borderRadius: '8px', 
+              padding: '0.4rem 1rem',
+              background: 'rgba(255,255,255,0.06)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '1px solid #ffffff', 
+              color: '#ffffff',
+              fontSize: '0.85rem',
+              fontWeight: '900',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseOver={(e) => { e.target.style.background = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' }}
+            onMouseOut={(e) => { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.boxShadow = 'none' }}
+          >
+            <span>&#8592;</span> Back to Dashboard
           </button>
+
+          {currentTab === 'users' && (
+            <button 
+              onClick={fetchUsers} 
+              disabled={userLoading}
+              style={{ 
+                width: 'auto', 
+                borderRadius: '8px', 
+                padding: '0.4rem 1rem',
+                background: 'rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid #ffffff', 
+                color: '#ffffff',
+                fontSize: '0.85rem',
+                fontWeight: '900',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: userLoading ? 0.6 : 1
+              }}
+              onMouseOver={(e) => { if(!userLoading) { e.target.style.background = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' } }}
+              onMouseOut={(e) => { if(!userLoading) { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.boxShadow = 'none' } }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: userLoading ? 'spin 1s linear infinite' : 'none' }}>
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              {userLoading ? 'Refreshing...' : 'Refresh Data'}
+              <style>{`
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+              `}</style>
+            </button>
+          )}
+
+          {currentTab === 'audits' && (
+            <button 
+              onClick={() => window.location.reload()} 
+              style={{ 
+                width: 'auto', 
+                borderRadius: '8px', 
+                padding: '0.4rem 1rem',
+                background: 'rgba(255,255,255,0.06)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid #ffffff', 
+                color: '#ffffff',
+                fontSize: '0.85rem',
+                fontWeight: '900',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseOver={(e) => { e.target.style.background = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' }}
+              onMouseOut={(e) => { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.boxShadow = 'none' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Refresh Logs
+            </button>
+          )}
+
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {currentTab === 'analytics' && (
+              <>
+                {/* Date picker container */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', position: 'relative' }} ref={calendarRef}>
+                  <div
+                    onClick={() => setShowCalendar(!showCalendar)}
+                    style={{ 
+                      background: 'rgba(255,255,255,0.08)', 
+                      backdropFilter: 'blur(24px)', 
+                      WebkitBackdropFilter: 'blur(24px)',
+                      color: '#ffffff', 
+                      border: '1px solid #ffffff', 
+                      borderRadius: '8px', 
+                      padding: '0.4rem 0.75rem', 
+                      fontSize: '0.85rem', 
+                      fontWeight: '900',
+                      cursor: 'pointer', 
+                      transition: 'all 0.3s ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      minWidth: '140px',
+                      justifyContent: 'space-between',
+                      boxShadow: '0 4px 15px rgba(255,255,255,0.05)'
+                    }}
+                    onMouseOver={(e) => { e.target.style.background = 'rgba(255,255,255,0.15)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' }}
+                    onMouseOut={(e) => { e.target.style.background = 'rgba(255,255,255,0.08)'; e.target.style.boxShadow = '0 4px 15px rgba(255,255,255,0.05)' }}
+                  >
+                    <span style={{ color: '#ffffff' }}>{analyticsMode === 'date' ? new Date(selectedDate + 'T00:00:00').toLocaleDateString() : 'Select Date'}</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                      <line x1="16" y1="2" x2="16" y2="6"></line>
+                      <line x1="8" y1="2" x2="8" y2="6"></line>
+                      <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                  </div>
+
+                  {/* Custom Glassy Calendar Modal */}
+                  {showCalendar && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 10px)',
+                      right: 0,
+                      zIndex: 1000,
+                      width: '280px',
+                      background: 'rgba(15, 15, 15, 0.95)',
+                      backdropFilter: 'blur(32px)',
+                      WebkitBackdropFilter: 'blur(32px)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '16px',
+                      padding: '1.25rem',
+                      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.1)',
+                      animation: 'calendarAppear 0.2s cubic-bezier(0, 0, 0.2, 1)'
+                    }}>
+                      <style>{`
+                        @keyframes calendarAppear {
+                          from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+                          to { opacity: 1; transform: translateY(0) scale(1); }
+                        }
+                      `}</style>
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <button onClick={(e) => { e.stopPropagation(); setCalDate(new Date(calDate.setMonth(calDate.getMonth() - 1))) }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '5px' }}>←</button>
+                        <div style={{ color: '#fff', fontWeight: '800', fontSize: '0.9rem' }}>
+                          {calDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); setCalDate(new Date(calDate.setMonth(calDate.getMonth() + 1))) }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '5px' }}>→</button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '8px' }}>
+                        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                          <div key={day} style={{ color: '#ffffff', opacity: 0.4, fontSize: '0.65rem', textAlign: 'center', fontWeight: '800' }}>{day}</div>
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                        {(() => {
+                          const days = [];
+                          const firstDay = new Date(calDate.getFullYear(), calDate.getMonth(), 1).getDay();
+                          const lastDate = new Date(calDate.getFullYear(), calDate.getMonth() + 1, 0).getDate();
+                          for (let i = 0; i < firstDay; i++) { days.push(<div key={`pad-${i}`} />); }
+                          for (let d = 1; d <= lastDate; d++) {
+                            const currentStr = `${calDate.getFullYear()}-${String(calDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                            const isSelected = selectedDate === currentStr && analyticsMode === 'date';
+                            const isToday = new Date().toISOString().split('T')[0] === currentStr;
+                            const isFuture = currentStr > todayStr;
+                            days.push(
+                              <div key={d} onClick={(e) => { e.stopPropagation(); if (isFuture) return; setSelectedDate(currentStr); setAnalyticsMode('date'); setShowCalendar(false); }}
+                                style={{ padding: '6px 0', textAlign: 'center', fontSize: '0.75rem', borderRadius: '6px', cursor: isFuture ? 'default' : 'pointer', color: isFuture ? 'rgba(255,255,255,0.15)' : '#ffffff', background: isSelected ? '#ffffff' : (isToday ? 'rgba(255,255,255,0.1)' : 'transparent'), color: isSelected ? '#000' : (isFuture ? 'rgba(255,255,255,0.15)' : '#ffffff'), fontWeight: isSelected || isToday ? '800' : '500', transition: 'all 0.2s' }}
+                                onMouseOver={(e) => { if(!isSelected && !isFuture) e.target.style.background = 'rgba(255,255,255,0.15)' }}
+                                onMouseOut={(e) => { if(!isSelected && !isFuture) e.target.style.background = (isToday ? 'rgba(255,255,255,0.1)' : 'transparent') }}
+                              >{d}</div>
+                            );
+                          }
+                          return days;
+                        })()}
+                      </div>
+
+                      <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between' }}>
+                        <button onClick={(e) => { e.stopPropagation(); setAnalyticsMode('all'); setShowCalendar(false); }} style={{ background: 'none', border: 'none', color: '#ffffff', opacity: 0.6, fontSize: '0.7rem', cursor: 'pointer', fontWeight: '700' }}>Clear</button>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedDate(todayStr); setAnalyticsMode('date'); setShowCalendar(false); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.7rem', cursor: 'pointer', fontWeight: '800' }}>Today</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* Clear pill */}
+                {analyticsMode === 'date' && (
+                  <button
+                    onClick={() => setAnalyticsMode('all')}
+                    style={{ 
+                      background: 'rgba(255,255,255,0.08)', 
+                      backdropFilter: 'blur(16px)',
+                      WebkitBackdropFilter: 'blur(16px)',
+                      color: '#ffffff', 
+                      border: '0.6px solid rgba(255,255,255,0.3)', 
+                      borderRadius: '8px', 
+                      padding: '0.5rem 1rem', 
+                      fontSize: '0.8rem', 
+                      fontWeight: '800',
+                      cursor: 'pointer', 
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.12)'}
+                    onMouseOut={(e) => e.target.style.background = 'rgba(255,255,255,0.08)'}
+                  >
+                    × All Time
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -553,64 +768,69 @@ export default function AdminDashboard() {
 
             {/* Row 1: Lightning + Success Rate */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: '2.8rem' }}>⚡</span>
+              <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="42" height="42" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 22C12 22 20 18 20 12V5L12 2L4 5V12C4 18 12 22 12 22Z" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 11V14" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <circle cx="12" cy="8.5" r="0.5" fill="#ffffff" stroke="#ffffff" strokeWidth="1"/>
+                </svg>
               </div>
-              <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '4px' }}>Success rate</div>
-                <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#facc15' }}>{apiStats.successRate}%</div>
-                <div style={{ marginTop: '6px', height: '6px', background: '#2d2d2d', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${apiStats.successRate}%`, background: 'linear-gradient(90deg, #34d399, #facc15)', borderRadius: '3px' }} />
+              <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#ffffff', marginBottom: '4px', fontWeight: '800' }}>Success rate</div>
+                <div style={{ fontSize: '2rem', fontWeight: '900', color: '#ffffff' }}>{apiStats.successRate}%</div>
+                <div style={{ marginTop: '6px', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${apiStats.successRate}%`, background: '#ffffff', borderRadius: '3px', boxShadow: '0 0 8px rgba(255,255,255,0.4)' }} />
                 </div>
               </div>
             </div>
 
             {/* Row 2: Requests + Users */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-              <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Requests</div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#fff', marginTop: '4px' }}>{apiStats.req.toLocaleString()}</div>
-                <div style={{ fontSize: '0.7rem', color: '#34d399', marginTop: '4px' }}>↑ API calls total</div>
+              <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#ffffff', opacity: 0.8 }}>Requests</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#ffffff', marginTop: '4px' }}>{apiStats.req.toLocaleString()}</div>
+                <div style={{ fontSize: '0.7rem', color: '#ffffff', opacity: 0.5, marginTop: '4px' }}>↑ API calls total</div>
               </div>
-              <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Users</div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#fff', marginTop: '4px' }}>{stats.total_users.toLocaleString()}</div>
-                <div style={{ fontSize: '0.7rem', color: '#34d399', marginTop: '4px' }}>↑ Registered</div>
+              <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#ffffff', opacity: 0.8 }}>Users</div>
+                <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#ffffff', marginTop: '4px' }}>{stats.total_users.toLocaleString()}</div>
+                <div style={{ fontSize: '0.7rem', color: '#ffffff', opacity: 0.5, marginTop: '4px' }}>↑ Registered</div>
               </div>
             </div>
 
             {/* Response Times */}
-            <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1rem' }}>
-              <div style={{ fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.75rem' }}>Response times <span style={{ color: '#52525b' }}>(ms)</span></div>
+            <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1rem' }}>
+              <div style={{ fontSize: '0.8rem', color: '#ffffff', opacity: 0.8, marginBottom: '0.75rem' }}>Response times <span style={{ color: '#ffffff', opacity: 0.4 }}>(ms)</span></div>
               <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: '0.75rem' }}>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#34d399' }}>{apiStats.lq}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>LQ</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#ffffff' }}>{apiStats.lq}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#ffffff', opacity: 0.6 }}>LQ</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#34d399' }}>{apiStats.median}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Median</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#ffffff' }}>{apiStats.median}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#ffffff', opacity: 0.6 }}>Median</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#facc15' }}>{apiStats.uq}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>UQ</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.7)' }}>{apiStats.uq}</div>
+                  <div style={{ fontSize: '0.7rem', color: '#ffffff', opacity: 0.6 }}>UQ</div>
                 </div>
               </div>
               {/* Gradient bar: green → yellow → red */}
-              <div style={{ height: '8px', borderRadius: '4px', background: 'linear-gradient(90deg, #34d399 0%, #34d399 60%, #facc15 80%, #ef4444 100%)' }} />
+              <div style={{ height: '8px', borderRadius: '4px', background: 'linear-gradient(90deg, #ffffff 0%, rgba(255,255,255,0.6) 60%, rgba(255,255,255,0.3) 80%, rgba(255,255,255,0.1) 100%)' }} />
             </div>
 
             {/* Endpoints List */}
-            <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1rem' }}>
+            <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '8px' }}>
                 {/* Animated Role Toggle */}
                 <div style={{ 
                   display: 'flex', 
-                  background: '#0a0a0a', 
+                  background: 'rgba(255,255,255,0.04)', 
+                  backdropFilter: 'blur(12px)',
                   borderRadius: '6px', 
                   padding: '2px', 
                   position: 'relative',
-                  border: '1px solid #2d2d2d',
+                  border: '1px solid rgba(255,255,255,0.1)',
                   width: '120px',
                   height: '28px'
                 }}>
@@ -621,11 +841,11 @@ export default function AdminDashboard() {
                     left: endpointRole === 'User' ? '2px' : 'calc(50% + 1px)',
                     width: 'calc(50% - 3px)',
                     height: 'calc(100% - 4px)',
-                    background: '#34d399',
+                    background: 'rgba(255,255,255,0.15)',
                     borderRadius: '4px',
                     transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                     zIndex: 0,
-                    boxShadow: '0 0 10px rgba(52, 211, 153, 0.4)'
+                    boxShadow: '0 0 10px rgba(255,255,255,0.1)'
                   }} />
                   
                   <button 
@@ -634,12 +854,13 @@ export default function AdminDashboard() {
                       flex: 1,
                       background: 'none', 
                       border: 'none', 
-                      color: endpointRole === 'User' ? '#000' : '#52525b', 
-                      fontWeight: endpointRole === 'User' ? '800' : '600',
+                      color: '#ffffff', 
+                      opacity: endpointRole === 'User' ? 1 : 0.5,
+                      fontWeight: endpointRole === 'User' ? '800' : '500',
                       cursor: 'pointer', 
                       zIndex: 1,
                       fontSize: '0.75rem',
-                      transition: 'color 0.2s'
+                      transition: 'all 0.2s'
                     }}
                   >
                     User
@@ -650,12 +871,13 @@ export default function AdminDashboard() {
                       flex: 1,
                       background: 'none', 
                       border: 'none', 
-                      color: endpointRole === 'Admin' ? '#000' : '#52525b', 
-                      fontWeight: endpointRole === 'Admin' ? '800' : '600',
+                      color: '#ffffff', 
+                      opacity: endpointRole === 'Admin' ? 1 : 0.5,
+                      fontWeight: endpointRole === 'Admin' ? '800' : '500',
                       cursor: 'pointer', 
                       zIndex: 1,
                       fontSize: '0.75rem',
-                      transition: 'color 0.2s'
+                      transition: 'all 0.2s'
                     }}
                   >
                     Admin
@@ -666,7 +888,7 @@ export default function AdminDashboard() {
                   {['All', 'Success', 'Bad', 'Error'].map(f => {
                     const filterMap = { All: 'All', Success: 'Success', Bad: 'Client', Error: 'Server' }
                     const active = endpointFilter === filterMap[f]
-                    const colors = { All: '#34d399', Success: '#34d399', Bad: '#3b82f6', Error: '#ef4444' }
+                    const colors = { All: '#ffffff', Success: '#ffffff', Bad: 'rgba(255,255,255,0.6)', Error: '#ef4444' }
                     return (
                       <button key={f} onClick={() => setEndpointFilter(filterMap[f])}
                         style={{ background: active ? colors[f] : '#242424', color: active ? '#000' : '#9ca3af', border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.72rem', cursor: 'pointer', fontWeight: active ? 'bold' : 'normal' }}>
@@ -682,11 +904,11 @@ export default function AdminDashboard() {
                   const max = Math.max(...endpointData.map(x => x.count)) || 1
                   const w = (d.count / max) * 100
                   return (
-                    <div key={i} style={{ position: 'relative', height: '26px', background: '#242424', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
-                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${w}%`, background: d.color, opacity: 0.2 }} />
+                    <div key={i} className="glass-card" style={{ position: 'relative', height: '26px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${w}%`, background: d.color, opacity: 0.15 }} />
                       <div style={{ position: 'relative', zIndex: 1, padding: '0 8px', display: 'flex', gap: '6px', width: '100%', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 'bold', color: d.color, minWidth: '28px' }}>{d.count}</span>
-                        <span style={{ fontSize: '0.75rem', color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.endpoint}</span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#ffffff', minWidth: '28px' }}>{d.count}</span>
+                        <span style={{ fontSize: '0.78rem', color: '#ffffff', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.endpoint}</span>
                       </div>
                     </div>
                   )
@@ -697,10 +919,12 @@ export default function AdminDashboard() {
 
           {/* ── BOTTOM LEFT: Event Composition Pie Chart ─────────────────── */}
           <div style={{ gridColumn: '1', gridRow: '2', display: 'flex', flexDirection: 'column' }}>
-            <div style={{
+            <div className="glass-card" style={{
               flex: 1,
-              background: '#161616',
-              border: '1px solid #2d2d2d',
+              background: 'rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              border: '0.6px solid rgba(255,255,255,0.12)',
               borderRadius: '8px',
               padding: '1.25rem',
               display: 'flex',
@@ -710,17 +934,14 @@ export default function AdminDashboard() {
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                 <div>
-                  <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600' }}>Event Composition</div>
-                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>
-                    {analyticsMode === 'all' ? 'All-time breakdown' : `Breakdown for ${selectedDate}`}
-                  </div>
+                  <div style={{ fontSize: '1.25rem', color: '#ffffff', fontWeight: '900', letterSpacing: '-0.03em' }}>Event Composition</div>
                 </div>
                 {(() => {
                   const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
                   return (
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fff', lineHeight: 1 }}>{total}</div>
-                      <div style={{ fontSize: '0.68rem', color: '#52525b', marginTop: '2px' }}>total events</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: '900', color: '#ffffff', lineHeight: 1 }}>{total}</div>
+                      <div style={{ fontSize: '0.68rem', color: '#ffffff', marginTop: '2px', fontWeight: '800' }}>total events</div>
                     </div>
                   )
                 })()}
@@ -731,7 +952,7 @@ export default function AdminDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   {eventCompositionData.length > 0 ? (() => {
                     const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
-                    const PIE_COLORS = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }
+                    const PIE_COLORS = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.6)', Auth: 'rgba(255,255,255,0.35)', Other: 'rgba(255,255,255,0.18)' }
                     return (
                       <PieChart>
                         <Pie
@@ -768,17 +989,17 @@ export default function AdminDashboard() {
                             const entry = payload[0]
                             const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
                             const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : 0
-                            const color = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }[entry.name] || '#fff'
+                            const color = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.7)', Auth: 'rgba(255,255,255,0.45)', Other: 'rgba(255,255,255,0.2)' }[entry.name] || '#fff'
                             return (
-                              <div style={{ background: '#1e1e1e', border: `1px solid ${color}`, padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', color: '#fff', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
-                                <div style={{ color, fontWeight: 'bold', marginBottom: '4px' }}>{entry.name}</div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-                                  <span style={{ color: '#9ca3af' }}>Count</span>
-                                  <span style={{ fontWeight: 'bold' }}>{entry.value}</span>
+                              <div style={{ background: 'rgba(15,15,15,0.9)', backdropFilter: 'blur(8px)', border: `1px solid rgba(255,255,255,0.2)`, padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', color: '#fff', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
+                                <div style={{ color, fontWeight: '800', marginBottom: '6px', fontSize: '0.9rem' }}>{entry.name}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', marginBottom: '4px' }}>
+                                  <span style={{ color: '#ffffff', opacity: 0.7, fontWeight: '600' }}>Count</span>
+                                  <span style={{ fontWeight: '800', color: '#ffffff' }}>{entry.value}</span>
                                 </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
-                                  <span style={{ color: '#9ca3af' }}>Share</span>
-                                  <span style={{ fontWeight: 'bold' }}>{pct}%</span>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem' }}>
+                                  <span style={{ color: '#ffffff', opacity: 0.7, fontWeight: '600' }}>Share</span>
+                                  <span style={{ fontWeight: '800', color: '#ffffff' }}>{pct}%</span>
                                 </div>
                               </div>
                             )
@@ -795,7 +1016,7 @@ export default function AdminDashboard() {
               {/* Legend with values and percentages */}
               {(() => {
                 const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
-                const PIE_COLORS = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }
+                const PIE_COLORS = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.6)', Auth: 'rgba(255,255,255,0.35)', Other: 'rgba(255,255,255,0.18)' }
                 return (
                   <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {eventCompositionData.map((d, i) => {
@@ -807,15 +1028,15 @@ export default function AdminDashboard() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: color, flexShrink: 0 }} />
-                              <span style={{ fontSize: '0.75rem', color: '#e5e7eb', fontWeight: '500' }}>{d.name}</span>
+                              <span style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: '800' }}>{d.name}</span>
                             </div>
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.72rem', color: '#52525b' }}>{pct}%</span>
-                              <span style={{ fontSize: '0.75rem', color: color, fontWeight: 'bold', minWidth: '24px', textAlign: 'right' }}>{d.value}</span>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.72rem', color: '#ffffff', fontWeight: '800' }}>{pct}%</span>
+                              <span style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: '900', minWidth: '24px', textAlign: 'right' }}>{d.value}</span>
                             </div>
                           </div>
-                          <div style={{ height: '3px', background: '#2d2d2d', borderRadius: '2px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${barW}%`, background: color, borderRadius: '2px', transition: 'width 0.8s ease' }} />
+                          <div style={{ height: '3px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${barW}%`, background: '#ffffff', borderRadius: '2px', transition: 'width 0.8s ease', boxShadow: '0 0 4px rgba(255,255,255,0.2)' }} />
                           </div>
                         </div>
                       )
@@ -829,7 +1050,7 @@ export default function AdminDashboard() {
           {/* ── TOP RIGHT: API Performance ───────────────────────────────── */}
           <div style={{ display: 'flex', flexDirection: 'column', gridColumn: '2', gridRow: '1', minWidth: 0 }}>
             {/* API Performance Block — stretches to fill row height */}
-            <div style={{ flex: 1, background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div className="glass-card" style={{ flex: 1, background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
               {/* Activity Chart */}
               <div>
@@ -837,10 +1058,10 @@ export default function AdminDashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                   <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '500' }}>Activity (Requests)</div>
                   <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem' }}>
-                    <span style={{ color: '#34d399', fontWeight: 'bold' }}>
+                    <span style={{ color: '#ffffff', fontWeight: 'bold' }}>
                       ✓ {activityChartData.reduce((s, d) => s + (d.SuccessCount || 0), 0)} ok
                     </span>
-                    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 'bold' }}>
                       ✗ {activityChartData.reduce((s, d) => s + (d.ErrorCount || 0), 0)} err
                     </span>
                   </div>
@@ -848,7 +1069,7 @@ export default function AdminDashboard() {
                 <div style={{ height: '140px', minWidth: 0 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={activityChartData} margin={{ top: 0, right: 0, left: 10, bottom: 0 }} barCategoryGap={2}>
-                      <YAxis stroke="#2d2d2d" tick={{ fill: '#fff', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis stroke="#2d2d2d" tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '500' }} axisLine={false} tickLine={false} />
                       <RechartsTooltip content={({ active, payload }) => {
                         if (!active || !payload?.length) return null
                         const d = payload[0]?.payload
@@ -859,18 +1080,29 @@ export default function AdminDashboard() {
                           hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
                         }) : d?.timeLabel
                         return (
-                          <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', color: '#fff', minWidth: '170px' }}>
-                            <div style={{ color: '#9ca3af', marginBottom: '6px', fontSize: '0.75rem' }}>{fullTime}</div>
-                            <div style={{ color: '#34d399', fontWeight: 'bold', marginBottom: '2px' }}>{d?.SuccessCount || 0} Success</div>
-                            {(d?.ErrorCount || 0) > 0 && <div style={{ color: '#ef4444', fontWeight: 'bold', marginBottom: '2px' }}>{d?.ErrorCount} Errors</div>}
-                            <div style={{ color: '#fff', marginTop: '4px', borderTop: '1px solid #2d2d2d', paddingTop: '4px', display: 'flex', justifyContent: 'space-between' }}>
-                              <span>Total: <strong>{total}</strong></span>
-                              <span style={{ color: successRate >= 90 ? '#34d399' : successRate >= 70 ? '#facc15' : '#ef4444' }}>{successRate}% ok</span>
+                          <div className="glass-card" style={{ 
+                            background: 'rgba(10, 10, 10, 0.85)', 
+                            backdropFilter: 'blur(24px)',
+                            WebkitBackdropFilter: 'blur(24px)',
+                            border: '1px solid rgba(255,255,255,0.25)', 
+                            padding: '12px 16px', 
+                            borderRadius: '10px', 
+                            fontSize: '0.85rem', 
+                            color: '#fff', 
+                            minWidth: '200px',
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)'
+                          }}>
+                            <div style={{ color: '#ffffff', opacity: 0.6, marginBottom: '10px', fontSize: '0.75rem', fontWeight: '600', letterSpacing: '0.02em' }}>{fullTime}</div>
+                            <div style={{ color: '#ffffff', fontWeight: '800', marginBottom: '6px', fontSize: '1rem' }}>{d?.SuccessCount || 0} Success</div>
+                            {(d?.ErrorCount || 0) > 0 && <div style={{ color: '#ef4444', fontWeight: '800', marginBottom: '6px', fontSize: '1rem' }}>{d?.ErrorCount} Errors</div>}
+                            <div style={{ color: '#fff', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ opacity: 0.85 }}>Total: <strong style={{ fontWeight: '900' }}>{total}</strong></span>
+                              <span style={{ color: '#ffffff', fontWeight: '800', background: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }}>{successRate}% ok</span>
                             </div>
                           </div>
                         )
                       }} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                      <Bar dataKey="SuccessCount" stackId="a" fill="#34d399" radius={[0,0,0,0]} animationDuration={1000} />
+                      <Bar dataKey="SuccessCount" stackId="a" fill="#ffffff" radius={[0,0,0,0]} animationDuration={1000} />
                       <Bar dataKey="ErrorCount" stackId="a" fill="#ef4444" radius={[2,2,0,0]} animationDuration={1000} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -878,10 +1110,10 @@ export default function AdminDashboard() {
                 {/* Legend */}
                 <div style={{ display: 'flex', gap: '12px', marginTop: '6px', fontSize: '0.72rem' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#9ca3af' }}>
-                    <span style={{ width: '10px', height: '10px', background: '#34d399', borderRadius: '2px', display: 'inline-block' }} /> Success
+                    <span style={{ width: '10px', height: '10px', background: '#ffffff', borderRadius: '2px', display: 'inline-block' }} /> Success
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#9ca3af' }}>
-                    <span style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '2px', display: 'inline-block' }} /> Errors
+                    <span style={{ width: '10px', height: '10px', background: 'rgba(255,255,255,0.4)', borderRadius: '2px', display: 'inline-block' }} /> Errors
                   </span>
                 </div>
               </div>
@@ -894,14 +1126,24 @@ export default function AdminDashboard() {
                     <BarChart data={apiChartData} margin={{ top: 0, right: 0, left: 10, bottom: 0 }} barCategoryGap={2}>
                       <YAxis stroke="#2d2d2d" tick={{ fill: '#fff', fontSize: 10 }} axisLine={false} tickLine={false} />
                       <RechartsTooltip content={({ active, payload }) => active && payload?.length ? (
-                        <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', color: '#fff' }}>
-                          <div style={{ color: '#9ca3af', marginBottom: '4px' }}>{payload[0]?.payload?.timeLabel}</div>
-                          <div style={{ color: '#3b82f6', fontWeight: 'bold', marginBottom: '2px' }}>{payload[0]?.payload?.ResponseTime}ms</div>
-                          <div style={{ color: '#34d399' }}>Status: {payload[0]?.payload?.Status}</div>
-                          <div style={{ color: '#9ca3af', fontSize: '0.75rem' }}>{payload[0]?.payload?.Endpoint}</div>
+                        <div className="glass-card" style={{ 
+                          background: 'rgba(10, 10, 10, 0.85)', 
+                          backdropFilter: 'blur(24px)', 
+                          WebkitBackdropFilter: 'blur(24px)', 
+                          border: '1px solid rgba(255,255,255,0.25)', 
+                          padding: '12px 16px', 
+                          borderRadius: '10px', 
+                          fontSize: '0.85rem', 
+                          color: '#fff', 
+                          boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)' 
+                        }}>
+                          <div style={{ color: '#ffffff', opacity: 0.6, marginBottom: '8px', fontSize: '0.75rem', fontWeight: '600' }}>{payload[0]?.payload?.timeLabel}</div>
+                          <div style={{ color: '#ffffff', fontWeight: '800', marginBottom: '6px', fontSize: '1rem' }}>{payload[0]?.payload?.ResponseTime}ms</div>
+                          <div style={{ color: '#ffffff', fontWeight: '700' }}>Status: {payload[0]?.payload?.Status}</div>
+                          <div style={{ color: '#ffffff', opacity: 0.6, fontSize: '0.75rem', marginTop: '6px' }}>{payload[0]?.payload?.Endpoint}</div>
                         </div>
                       ) : null} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                      <Bar dataKey="ResponseTime" fill="#3b82f6" radius={[2,2,0,0]} animationDuration={800} />
+                      <Bar dataKey="ResponseTime" fill="rgba(255,255,255,0.55)" radius={[2,2,0,0]} animationDuration={800} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -913,15 +1155,15 @@ export default function AdminDashboard() {
                 <div style={{ display: 'flex', width: '100%', height: '28px', gap: '1px', borderRadius: '4px', overflow: 'hidden' }}>
                   {apiChartData.length === 0 && <div style={{ color: '#52525b', fontSize: '0.8rem', display: 'flex', alignItems: 'center', paddingLeft: '8px' }}>Waiting for requests...</div>}
                   {apiChartData.map((d, i) => {
-                    let bg = '#34d399'
-                    if (d.Status >= 500) bg = '#ef4444'
-                    else if (d.Status >= 400) bg = '#facc15'
-                    else if (d.Status >= 300) bg = '#3b82f6'
+                    let bg = '#ffffff'
+                    if (d.Status >= 500) bg = '#ef4444' // Keep red for server error
+                    else if (d.Status >= 400) bg = 'rgba(255,255,255,0.4)'
+                    else if (d.Status >= 300) bg = 'rgba(255,255,255,0.7)'
                     return <div key={i} style={{ flex: 1, background: bg }} title={`${d.Status} · ${d.Endpoint} · ${d.ResponseTime}ms`} />
                   })}
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-                  {[['#34d399','2xx Success'],['#3b82f6','3xx Redirect'],['#facc15','4xx Client'],['#ef4444','5xx Server']].map(([c,l]) => (
+                  {[['#ffffff','2xx Success'],['rgba(255,255,255,0.7)','3xx Redirect'],['rgba(255,255,255,0.4)','4xx Client'],['#ef4444','5xx Server']].map(([c,l]) => (
                     <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: c }} />
                       <span style={{ fontSize: '0.7rem', color: '#fff' }}>{l}</span>
@@ -936,20 +1178,19 @@ export default function AdminDashboard() {
           <div style={{ gridColumn: '2', gridRow: '2', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
 
             {/* 14-day Activity Trend */}
-            <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                 <div>
-                  <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600' }}>14-Day Activity Trend</div>
-                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>Per-day file operations and auth events</div>
+                  <div style={{ fontSize: '1.25rem', color: '#ffffff', fontWeight: '900', letterSpacing: '-0.03em' }}>14-Day Activity Trend</div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem' }}>
                   {[
-                    ['#34d399', 'Uploads'],
-                    ['#3b82f6', 'Downloads'],
-                    ['#facc15', 'Auth'],
-                    ['#a855f7', 'Other']
+                    ['#ffffff', 'Uploads'],
+                    ['#fbfbfee3', 'Downloads'],
+                    ['#ffffffa0', 'Auth'],
+                    ['#fdfdfd80', 'Other']
                   ].map(([c, l]) => (
-                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#9ca3af' }}>
+                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#ffffff', fontWeight: '800' }}>
                       <span style={{ width: '10px', height: '10px', background: c, borderRadius: '3px', display: 'inline-block', flexShrink: 0 }} />
                       <span>{l}</span>
                     </span>
@@ -961,68 +1202,77 @@ export default function AdminDashboard() {
                   {activityData.some(d => d.Uploads + d.Downloads + d.Auth + d.Other > 0) ? (
                     <BarChart data={activityData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }} barCategoryGap="20%" barGap={2}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1f1f1f" vertical={false} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} allowDecimals={false} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '800' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '800' }} allowDecimals={false} />
                       <RechartsTooltip
                         cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null
                           const total = payload.reduce((s, p) => s + (p.value || 0), 0)
                           return (
-                            <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '10px 14px', borderRadius: '8px', fontSize: '0.78rem', color: '#fff', minWidth: '140px' }}>
-                              <div style={{ color: '#9ca3af', marginBottom: '6px', fontWeight: 'bold', borderBottom: '1px solid #2d2d2d', paddingBottom: '4px' }}>{label}</div>
+                            <div className="glass-card" style={{ 
+                              background: 'rgba(10, 10, 10, 0.85)', 
+                              backdropFilter: 'blur(24px)', 
+                              WebkitBackdropFilter: 'blur(24px)', 
+                              border: '1px solid rgba(255,255,255,0.25)', 
+                              padding: '12px 16px', 
+                              borderRadius: '10px', 
+                              fontSize: '0.85rem', 
+                              color: '#fff', 
+                              minWidth: '160px', 
+                              boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)' 
+                            }}>
+                              <div style={{ color: '#ffffff', opacity: 0.6, marginBottom: '10px', fontWeight: '800', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '8px' }}>{label}</div>
                               {payload.map((p, i) => (
-                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '3px' }}>
-                                  <span style={{ color: p.fill, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '6px' }}>
+                                  <span style={{ color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <span style={{ width: '8px', height: '8px', background: p.fill, borderRadius: '2px', display: 'inline-block' }} />
                                     {p.name}
                                   </span>
-                                  <span style={{ fontWeight: 'bold' }}>{p.value}</span>
+                                  <span style={{ fontWeight: '800' }}>{p.value}</span>
                                 </div>
                               ))}
-                              <div style={{ borderTop: '1px solid #2d2d2d', marginTop: '4px', paddingTop: '4px', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>Total</span><span style={{ fontWeight: 'bold' }}>{total}</span>
+                              <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', marginTop: '8px', paddingTop: '8px', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ opacity: 0.85 }}>Total</span><span style={{ fontWeight: '900' }}>{total}</span>
                               </div>
                             </div>
                           )
                         }}
                       />
-                      <Bar dataKey="Uploads" fill="#34d399" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Downloads" fill="#3b82f6" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Auth" fill="#facc15" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Other" fill="#a855f7" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Uploads" fill="#ffffff" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Downloads" fill="#d4d4d8" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Auth" fill="#71717a" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Other" fill="#3f3f46" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
                     </BarChart>
                   ) : (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '0.8rem' }}>No events in the last 14 days</div>
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', opacity: 0.4, fontSize: '0.8rem' }}>No events in the last 14 days</div>
                   )}
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* User Engagement (Grouped Bar Chart) */}
-            <div style={{ 
+            <div className="glass-card" style={{ 
                 flex: 1,
-                background: '#161616', 
-                border: '1px solid #2d2d2d', 
+                background: 'rgba(255,255,255,0.04)', 
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '0.6px solid rgba(255,255,255,0.12)', 
                 borderRadius: '12px', 
                 padding: '1.5rem',
                 display: 'flex',
                 flexDirection: 'column',
-                transition: 'all 0.3s ease',
                 minHeight: '220px'
               }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1rem', letterSpacing: '-0.02em' }}>User Engagement</h3>
-                  <p style={{ margin: '3px 0 0', color: '#71717a', fontSize: '0.75rem' }}>
-                    {analyticsMode === 'all' ? 'All-time per-user breakdown' : `Breakdown for ${selectedDate}`}
-                  </p>
+                  <h3 style={{ margin: 0, color: '#ffffff', fontSize: '1.5rem', letterSpacing: '-0.04em', fontWeight: '900' }}>User Engagement</h3>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', background: '#0a0a0a', padding: '6px 12px', borderRadius: '8px', border: '1px solid #2d2d2d' }}>
-                  {[['#34d399','API'],['#3b82f6','Uploads'],['#a855f7','Downloads']].map(([c,l]) => (
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  {[['#ffffff','API'],['#a1a1aa','Uploads'],['#52525b','Downloads']].map(([c,l]) => (
                     <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                       <div style={{ width: '7px', height: '7px', background: c, borderRadius: '50%' }} />
-                      <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>{l}</span>
+                      <span style={{ fontSize: '0.68rem', color: '#ffffff', fontWeight: '800' }}>{l}</span>
                     </div>
                   ))}
                 </div>
@@ -1033,19 +1283,28 @@ export default function AdminDashboard() {
                   {userActivityData.length > 0 ? (
                     <BarChart data={userActivityData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }} barGap={4}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#2d2d2d" vertical={false} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10 }} dy={8} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10 }} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '800' }} dy={8} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '800' }} />
                       <RechartsTooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.03)' }}
                         content={({ active, payload, label }) => {
                           if (active && payload && payload.length) {
                             return (
-                              <div style={{ background: '#1e1e1e', border: '1px solid #3b82f6', padding: '10px', borderRadius: '8px', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
-                                <p style={{ margin: '0 0 8px', fontWeight: '600', color: '#fff', fontSize: '0.85rem', borderBottom: '1px solid #2d2d2d', paddingBottom: '5px' }}>{label}</p>
-                                {[['API Hits','#34d399',0],['Uploads','#3b82f6',1],['Downloads','#a855f7',2]].map(([name, color, idx]) => (
-                                  <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', marginBottom: '3px' }}>
-                                    <span style={{ color, fontSize: '0.78rem' }}>{name}</span>
-                                    <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.78rem' }}>{payload[idx]?.value ?? 0}</span>
+                              <div className="glass-card" style={{ 
+                                background: 'rgba(10, 10, 10, 0.85)', 
+                                backdropFilter: 'blur(24px)', 
+                                WebkitBackdropFilter: 'blur(24px)', 
+                                border: '1px solid rgba(255,255,255,0.25)', 
+                                padding: '12px 16px', 
+                                borderRadius: '10px', 
+                                boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.1)', 
+                                minWidth: '160px' 
+                              }}>
+                                <p style={{ margin: '0 0 10px', fontWeight: '800', color: '#fff', fontSize: '0.85rem', borderBottom: '1px solid rgba(255,255,255,0.15)', paddingBottom: '8px', opacity: 0.75 }}>{label}</p>
+                                {[['API Hits','#ffffff',0],['Uploads','#a1a1aa',1],['Downloads','#52525b',2]].map(([name, color, idx]) => (
+                                  <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '6px' }}>
+                                    <span style={{ color: '#ffffff', fontSize: '0.8rem', opacity: 0.9 }}>{name}</span>
+                                    <span style={{ color: '#fff', fontWeight: '800', fontSize: '0.8rem' }}>{payload[idx]?.value ?? 0}</span>
                                   </div>
                                 ))}
                               </div>
@@ -1054,12 +1313,12 @@ export default function AdminDashboard() {
                           return null
                         }}
                       />
-                      <Bar dataKey="api" fill="#34d399" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
-                      <Bar dataKey="uploads" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
-                      <Bar dataKey="downloads" fill="#a855f7" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
+                      <Bar dataKey="api" fill="#ffffff" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
+                      <Bar dataKey="uploads" fill="#a1a1aa" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
+                      <Bar dataKey="downloads" fill="#52525b" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
                     </BarChart>
                   ) : (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', border: '1px dashed #2d2d2d', borderRadius: '8px' }}>
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', opacity: 0.4, border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '8px' }}>
                       <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📊</div>
                         <div style={{ fontSize: '0.85rem' }}>
@@ -1085,17 +1344,18 @@ export default function AdminDashboard() {
           <div className="supa-grid" style={{ gridTemplateColumns: '400px 1fr' }}>
             
             {/* Left side: Endpoints List */}
-            <div className="supa-card" style={{ padding: '1rem', background: '#18181b', border: 'none' }}>
+            <div className="supa-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ margin: 0, color: '#e5e7eb', fontSize: '1.1rem', fontWeight: '500' }}>Endpoints</h3>
+                <h3 style={{ margin: 0, color: '#ffffff', fontSize: '1.1rem', fontWeight: '500' }}>Endpoints</h3>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   {['All', 'Success', 'Redirect', 'Client', 'Server'].map(f => (
                     <button 
                       key={f}
                       onClick={() => setEndpointFilter(f)}
                       style={{ 
-                        background: endpointFilter === f ? (f === 'All' ? '#34d399' : '#27272a') : '#1e1e1e',
-                        color: endpointFilter === f ? (f === 'All' ? '#000' : '#fff') : '#71717a',
+                        background: endpointFilter === f ? '#ffffff' : 'rgba(255,255,255,0.06)',
+                        color: endpointFilter === f ? '#000' : '#ffffff',
+                        opacity: endpointFilter === f ? 1 : 0.6,
                         border: 'none', borderRadius: '4px', padding: '2px 8px', fontSize: '0.75rem', cursor: 'pointer',
                         fontWeight: endpointFilter === f ? 'bold' : 'normal'
                       }}>
@@ -1110,16 +1370,16 @@ export default function AdminDashboard() {
                   const maxCount = Math.max(...endpointData.map(x => x.count)) || 1;
                   const widthPct = (d.count / maxCount) * 100;
                   return (
-                    <div key={i} style={{ position: 'relative', width: '100%', height: '30px', background: '#242424', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
-                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${widthPct}%`, background: d.color, opacity: 0.85 }} />
-                      <div style={{ position: 'relative', zIndex: 1, padding: '0 10px', color: '#000', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', gap: '8px', width: '100%' }}>
-                        <span style={{ minWidth: '25px', color: widthPct > 15 ? '#000' : d.color }}>{d.count}</span>
-                        <span style={{ color: widthPct > 15 ? 'rgba(0,0,0,0.7)' : '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.endpoint}</span>
+                    <div key={i} className="glass-card" style={{ position: 'relative', width: '100%', height: '30px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${widthPct}%`, background: d.color, opacity: 0.18 }} />
+                      <div style={{ position: 'relative', zIndex: 1, padding: '0 10px', color: '#fff', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', gap: '8px', width: '100%' }}>
+                        <span style={{ minWidth: '25px', color: '#ffffff', fontWeight: '800' }}>{d.count}</span>
+                        <span style={{ color: '#ffffff', fontWeight: '700', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.endpoint}</span>
                       </div>
                     </div>
                   )
                 }) : (
-                  <div style={{ color: '#52525b', fontSize: '0.85rem', marginTop: '1rem', textAlign: 'center' }}>No endpoints found for this filter.</div>
+                  <div style={{ color: '#ffffff', opacity: 0.5, fontSize: '0.85rem', marginTop: '1rem', textAlign: 'center' }}>No endpoints found for this filter.</div>
                 )}
               </div>
             </div>
@@ -1129,44 +1389,44 @@ export default function AdminDashboard() {
               
               {/* Stat Boxes Row */}
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <div className="supa-stat" style={{ background: '#1e1e1e', alignItems: 'center', padding: '1rem', flex: '0 0 100px' }}>
-                  <div style={{ fontSize: '2.5rem', color: '#34d399' }}>⚡</div>
+                <div className="supa-stat glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', alignItems: 'center', padding: '1rem', flex: '0 0 100px' }}>
+                  <div style={{ fontSize: '2.5rem', color: '#ffffff' }}>⚡</div>
                 </div>
-                <div className="supa-stat" style={{ background: '#1e1e1e', padding: '1rem', flex: 1 }}>
+                <div className="supa-stat glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', padding: '1rem', flex: 1 }}>
                   <div className="supa-stat-label">Success rate</div>
-                  <div className="supa-stat-value" style={{ color: '#34d399', fontSize: '1.5rem' }}>{apiStats.successRate}%</div>
+                  <div className="supa-stat-value" style={{ color: '#ffffff', fontSize: '1.5rem' }}>{apiStats.successRate}%</div>
                 </div>
-                <div className="supa-stat" style={{ background: '#1e1e1e', padding: '1rem', flex: 1 }}>
+                <div className="supa-stat glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', padding: '1rem', flex: 1 }}>
                   <div className="supa-stat-label">Requests</div>
                   <div className="supa-stat-value" style={{ color: '#fff', fontSize: '1.5rem' }}>{apiStats.req}</div>
                 </div>
-                <div className="supa-stat" style={{ background: '#1e1e1e', padding: '1rem', flex: 1 }}>
+                <div className="supa-stat glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', padding: '1rem', flex: 1 }}>
                   <div className="supa-stat-label">Users</div>
                   <div className="supa-stat-value" style={{ color: '#fff', fontSize: '1.5rem' }}>{stats.total_users}</div>
                 </div>
               </div>
 
               {/* Response Time Stats Row */}
-              <div className="supa-card" style={{ padding: '1rem' }}>
+              <div className="supa-card glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)' }}>
                 <div className="supa-stat-label">Response times (ms)</div>
                 <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '0.5rem' }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#34d399' }}>{apiStats.lq}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#ffffff' }}>{apiStats.lq}</div>
                     <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>LQ</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#34d399' }}>{apiStats.median}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#ffffff' }}>{apiStats.median}</div>
                     <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>Median</div>
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#34d399' }}>{apiStats.uq}</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'rgba(255,255,255,0.7)' }}>{apiStats.uq}</div>
                     <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>UQ</div>
                   </div>
                 </div>
               </div>
               
               {/* Activity Chart Row */}
-              <div className="supa-card" style={{ padding: '1rem' }}>
+              <div className="supa-card glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)' }}>
                 <div className="supa-stat-label">Activity</div>
                 <div style={{ height: '120px', width: '100%', marginTop: '0.5rem' }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -1174,14 +1434,14 @@ export default function AdminDashboard() {
                       <XAxis dataKey="name" hide />
                       <YAxis stroke="#52525b" tick={{fill: '#9ca3af', fontSize: 10}} axisLine={false} tickLine={false} allowDecimals={false} />
                       <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#242424' }} />
-                      <Bar dataKey="Requests" fill="#34d399" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="Requests" fill="#ffffff" radius={[2, 2, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               {/* Response Time Chart Row */}
-              <div className="supa-card" style={{ padding: '1rem' }}>
+              <div className="supa-card glass-card" style={{ padding: '1rem', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)' }}>
                 <div className="supa-stat-label">Response time (ms)</div>
                 <div style={{ height: '120px', width: '100%', marginTop: '0.5rem' }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -1189,19 +1449,23 @@ export default function AdminDashboard() {
                       <XAxis dataKey="name" hide />
                       <YAxis stroke="#52525b" tick={{fill: '#9ca3af', fontSize: 10}} axisLine={false} tickLine={false} />
                       <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#242424' }} />
-                      <Bar dataKey="ResponseTime" fill="#6b7280" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="ResponseTime" fill="rgba(255,255,255,0.45)" radius={[2, 2, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               {/* Success Rate Row */}
-              <div className="supa-card" style={{ padding: '1rem' }}>
+              <div className="supa-card glass-card" style={{ padding: '1rem' }}>
                 <div className="supa-stat-label">Success rate</div>
                 <div style={{ display: 'flex', width: '100%', height: '24px', gap: '1px', marginTop: '0.5rem' }}>
-                  {apiChartData.map((d, i) => (
-                    <div key={i} style={{ flex: 1, background: d.Status < 400 ? '#34d399' : '#facc15' }} title={`${d.Status} - ${d.Endpoint} (${d.ResponseTime}ms)`} />
-                  ))}
+                  {apiChartData.map((d, i) => {
+                    let bg = '#ffffff'
+                    if (d.Status >= 500) bg = '#ef4444'
+                    else if (d.Status >= 400) bg = 'rgba(255,255,255,0.4)'
+                    else if (d.Status >= 300) bg = 'rgba(255,255,255,0.7)'
+                    return <div key={i} style={{ flex: 1, background: bg }} title={`${d.Status} - ${d.Endpoint} (${d.ResponseTime}ms)`} />
+                  })}
                   {apiChartData.length === 0 && <div style={{ color: '#52525b', fontSize: '0.8rem', fontStyle: 'italic' }}>Waiting for requests...</div>}
                 </div>
               </div>
@@ -1209,13 +1473,13 @@ export default function AdminDashboard() {
             </div>
             
             {/* Supabase-style Log Explorer */}
-            <div className="supa-card" style={{ gridColumn: '1 / -1', padding: '0', background: '#161616', overflow: 'hidden', border: '1px solid #2d2d2d' }}>
+            <div className="supa-card" style={{ gridColumn: '1 / -1', padding: '0', background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', overflow: 'hidden', border: '0.6px solid rgba(255,255,255,0.12)' }}>
               {/* Stacked Chart Top */}
-              <div style={{ height: '120px', width: '100%', padding: '1rem 1rem 0 1rem', borderBottom: '1px solid #2d2d2d' }}>
+              <div style={{ height: '120px', width: '100%', padding: '1rem 1rem 0 1rem', borderBottom: '0.6px solid rgba(255,255,255,0.1)' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={apiChartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                    <Bar dataKey="ErrorCount" stackId="a" fill="#facc15" radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="SuccessCount" stackId="a" fill="#34d399" radius={[2, 2, 0, 0]} />
+                    <Bar dataKey="ErrorCount" stackId="a" fill="#ef4444" radius={[0, 0, 0, 0]} />
+                    <Bar dataKey="SuccessCount" stackId="a" fill="#ffffff" radius={[2, 2, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1231,16 +1495,16 @@ export default function AdminDashboard() {
                           method = parts[0]; path = parts.slice(1).join(' ');
                        }
                        const sCode = log.status || 200;
-                       let sColor = '#34d399'; let sBg = 'rgba(52, 211, 153, 0.15)';
+                       let sColor = '#ffffff'; let sBg = 'rgba(255, 255, 255, 0.1)';
                        if (sCode >= 500) { sColor = '#ef4444'; sBg = 'rgba(239, 68, 68, 0.15)'; }
-                       else if (sCode >= 400) { sColor = '#facc15'; sBg = 'rgba(250, 204, 21, 0.15)'; }
-                       else if (sCode >= 300) { sColor = '#3b82f6'; sBg = 'rgba(59, 130, 246, 0.15)'; }
+                       else if (sCode >= 400) { sColor = 'rgba(255,255,255,0.6)'; sBg = 'rgba(255, 255, 255, 0.05)'; }
+                       else if (sCode >= 300) { sColor = 'rgba(255,255,255,0.85)'; sBg = 'rgba(255, 255, 255, 0.08)'; }
                        
                        const logDate = log.timestamp ? new Date(log.timestamp) : new Date();
                        const formattedDate = `${logDate.getDate()} ${logDate.toLocaleString('default', {month: 'short'})} ${logDate.getFullYear().toString().substr(-2)} ${logDate.getHours().toString().padStart(2,'0')}:${logDate.getMinutes().toString().padStart(2,'0')}:${logDate.getSeconds().toString().padStart(2,'0')}`;
                        
                        return (
-                        <tr key={i} style={{ borderBottom: '1px solid #242424', color: '#a1a1aa' }}>
+                        <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#ffffff', opacity: 0.7 }}>
                           <td style={{ padding: '8px 16px', width: '220px', whiteSpace: 'nowrap' }}>
                              {formattedDate}
                           </td>
@@ -1268,29 +1532,25 @@ export default function AdminDashboard() {
         <div style={{ marginTop: '0.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#fff' }}>User Management</h2>
-              <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>Detailed user activity and resource allocation</p>
+              <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#fff', fontWeight: '900' }}>User Management</h2>
             </div>
-            <button className="btn btn-outline btn-sm" onClick={fetchUsers} disabled={userLoading} style={{ borderRadius: '8px' }}>
-              {userLoading ? 'Refreshing...' : '🔄 Refresh Data'}
-            </button>
           </div>
 
           <div style={{ 
             position: 'relative', 
             borderRadius: '16px', 
             overflow: 'hidden', 
-            height: '600px', 
             display: 'flex', 
-            flexDirection: 'column' 
+            flexDirection: 'column',
+            width: '100%'
           }}>
-            <GlassSurface width="100%" height="100%" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
-              <div style={{ width: '100%', height: '100%', boxSizing: 'border-box', overflowY: 'auto' }} className="custom-scrollbar">
+            <GlassSurface width="100%" height="auto" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
+              <div style={{ width: '100%', maxHeight: 'calc(100vh - 250px)', boxSizing: 'border-box', overflowY: 'auto' }} className="custom-scrollbar">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ 
-                  borderBottom: '1.5px solid rgba(255,255,255,1)', 
-                  background: 'rgba(255,255,255,0.05)',
+                  borderBottom: '1px solid rgba(255,255,255,0.2)', 
+                  background: '#18181b',
                   position: 'sticky',
                   top: 0,
                   zIndex: 10
@@ -1310,21 +1570,21 @@ export default function AdminDashboard() {
                   <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '1.2rem' }}>
                       <div style={{ color: '#fff', fontWeight: '700', fontSize: '1rem' }}>{user.username}</div>
-                      <div style={{ color: '#a3a3a3', fontSize: '0.75rem' }}>{user.email}</div>
+                      <div style={{ color: '#ffffff', fontSize: '0.75rem', fontWeight: '500' }}>{user.email}</div>
                     </td>
                     <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.files_count}</td>
                     <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.total_requests}</td>
                     <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.uploads}</td>
                     <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.downloads}</td>
-                    <td style={{ padding: '1.2rem', color: '#a3a3a3', fontWeight: '600' }}>50.00 MB</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', opacity: 0.6, fontWeight: '600' }}>50.00 MB</td>
                     <td style={{ padding: '1.2rem' }}>
                       <div style={{ color: '#fff', fontWeight: '700', marginBottom: '8px', fontSize: '0.9rem' }}>{(user.storage_used / (1024 * 1024)).toFixed(2)} MB</div>
                       <div style={{ 
                         height: '10px', 
                         width: '100px', 
-                        background: '#000000', 
+                        background: 'transparent', 
                         borderRadius: '5px', 
-                        border: '0.6px solid #ffffff',
+                        border: '0.6px solid rgba(255,255,255,0.3)',
                         overflow: 'hidden',
                         position: 'relative'
                       }}>
@@ -1355,7 +1615,7 @@ export default function AdminDashboard() {
                           onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                         >
-                          {user.is_blocked ? '🔓 UNBLOCK' : '🚫 BLOCK'}
+                          {user.is_blocked ? 'UNBLOCK' : 'BLOCK'}
                         </button>
                         <button 
                           onClick={() => handleDeleteUser(user.id)}
@@ -1373,7 +1633,7 @@ export default function AdminDashboard() {
                           onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
                         >
-                          🗑️ DELETE
+                          DELETE
                         </button>
                       </div>
                     </td>
@@ -1390,55 +1650,134 @@ export default function AdminDashboard() {
       {currentTab === 'audits' && (
         <div style={{ marginTop: '0.5rem' }}>
           {/* ── Toolbar ── */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#fff' }}>Audit Trail</h2>
-              <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>Immutable record of all system operations and security events</p>
+
+
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: '20px', marginBottom: '0.5rem' }}>
+            {/* Mode toggle pill - Centered */}
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(8px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+              {[['all', 'All Logs'], ['date', 'By Date']].map(([mode, label]) => (
+                <button
+                  key={mode}
+                  onClick={() => setAuditDateMode(mode)}
+                  style={{
+                    background: auditDateMode === mode ? '#ffffff' : 'rgba(255,255,255,0.06)',
+                    color: auditDateMode === mode ? '#000' : '#ffffff',
+                    opacity: 1,
+                    border: '1px solid #ffffff',
+                    borderRadius: '8px',
+                    padding: '8px 24px',
+                    fontSize: '0.85rem',
+                    fontWeight: '900',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    backdropFilter: 'blur(16px)',
+                    WebkitBackdropFilter: 'blur(16px)',
+                  }}
+                  onMouseOver={(e) => { if(auditDateMode !== mode) e.target.style.background = 'rgba(255,255,255,0.12)' }}
+                  onMouseOut={(e) => { if(auditDateMode !== mode) e.target.style.background = 'rgba(255,255,255,0.06)' }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-
-              {/* Mode toggle pill */}
-              <div style={{ display: 'flex', background: '#0a0a0a', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '3px', gap: '2px' }}>
-                {[['all', '📋 All Logs'], ['date', '📅 By Date']].map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    onClick={() => setAuditDateMode(mode)}
-                    style={{
-                      background: auditDateMode === mode ? '#34d399' : 'transparent',
-                      color: auditDateMode === mode ? '#000' : '#71717a',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: auditDateMode === mode ? '700' : '500',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Date picker — visible only in 'date' mode */}
-              {auditDateMode === 'date' && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                  <label style={{ fontSize: '0.65rem', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select Date</label>
-                  <input
-                    type="date"
-                    value={auditDate}
-                    max={new Date().toISOString().split('T')[0]}
-                    onChange={e => setAuditDate(e.target.value)}
-                    style={{ background: '#161616', color: '#fff', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                  />
+            {/* Date picker — visible only in 'date' mode, centered below toggle */}
+            {auditDateMode === 'date' && (
+              <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }} ref={auditCalendarRef}>
+                <div
+                  onClick={() => setShowAuditCalendar(!showAuditCalendar)}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.06)', 
+                    backdropFilter: 'blur(16px)', 
+                    WebkitBackdropFilter: 'blur(16px)',
+                    color: '#ffffff', 
+                    border: '1px solid #ffffff', 
+                    borderRadius: '8px', 
+                    padding: '8px 16px', 
+                    fontSize: '0.85rem', 
+                    fontWeight: '900',
+                    cursor: 'pointer', 
+                    transition: 'all 0.3s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    minWidth: '140px',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 4px 15px rgba(255,255,255,0.05)'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(255,255,255,0.05)' }}
+                >
+                  <span style={{ color: '#ffffff' }}>{new Date(auditDate + 'T00:00:00').toLocaleDateString()}</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                  </svg>
                 </div>
-              )}
 
-              <button className="btn btn-outline btn-sm" onClick={() => window.location.reload()} style={{ borderRadius: '8px' }}>
-                &#x1F504; Refresh
-              </button>
-            </div>
+                {showAuditCalendar && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 10px)',
+                    right: 0,
+                    zIndex: 1000,
+                    width: '280px',
+                    background: 'rgba(15, 15, 15, 0.95)',
+                    backdropFilter: 'blur(32px)',
+                    WebkitBackdropFilter: 'blur(32px)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '16px',
+                    padding: '1.25rem',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255,255,255,0.1)',
+                    animation: 'calendarAppear 0.2s cubic-bezier(0, 0, 0.2, 1)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <button onClick={(e) => { e.stopPropagation(); setAuditCalDate(new Date(auditCalDate.setMonth(auditCalDate.getMonth() - 1))) }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '5px' }}>←</button>
+                      <div style={{ color: '#fff', fontWeight: '800', fontSize: '0.9rem' }}>
+                        {auditCalDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); setAuditCalDate(new Date(auditCalDate.setMonth(auditCalDate.getMonth() + 1))) }} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '5px' }}>→</button>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', marginBottom: '8px' }}>
+                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                        <div key={day} style={{ color: '#ffffff', opacity: 0.4, fontSize: '0.65rem', textAlign: 'center', fontWeight: '800' }}>{day}</div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                      {(() => {
+                        const days = [];
+                        const firstDay = new Date(auditCalDate.getFullYear(), auditCalDate.getMonth(), 1).getDay();
+                        const lastDate = new Date(auditCalDate.getFullYear(), auditCalDate.getMonth() + 1, 0).getDate();
+                        for (let i = 0; i < firstDay; i++) { days.push(<div key={`pad-${i}`} />); }
+                        for (let d = 1; d <= lastDate; d++) {
+                          const currentStr = `${auditCalDate.getFullYear()}-${String(auditCalDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                          const isSelected = auditDate === currentStr;
+                          const isToday = todayStr === currentStr;
+                          const isFuture = currentStr > todayStr;
+                          days.push(
+                            <div key={d} onClick={(e) => { e.stopPropagation(); if (isFuture) return; setAuditDate(currentStr); setShowAuditCalendar(false); }}
+                              style={{ padding: '6px 0', textAlign: 'center', fontSize: '0.75rem', borderRadius: '6px', cursor: isFuture ? 'default' : 'pointer', color: isFuture ? 'rgba(255,255,255,0.15)' : '#ffffff', background: isSelected ? '#ffffff' : (isToday ? 'rgba(255,255,255,0.1)' : 'transparent'), color: isSelected ? '#000' : (isFuture ? 'rgba(255,255,255,0.15)' : '#ffffff'), fontWeight: isSelected || isToday ? '800' : '500', transition: 'all 0.2s' }}
+                              onMouseOver={(e) => { if(!isSelected && !isFuture) e.target.style.background = 'rgba(255,255,255,0.15)' }}
+                              onMouseOut={(e) => { if(!isSelected && !isFuture) e.target.style.background = (isToday ? 'rgba(255,255,255,0.1)' : 'transparent') }}
+                            >{d}</div>
+                          );
+                        }
+                        return days;
+                      })()}
+                    </div>
+
+                    <div style={{ marginTop: '1rem', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'center' }}>
+                      <button onClick={(e) => { e.stopPropagation(); setAuditDate(todayStr); setShowAuditCalendar(false); }} style={{ background: 'none', border: 'none', color: '#ffffff', fontSize: '0.7rem', cursor: 'pointer', fontWeight: '800' }}>Today</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
 
           {/* Live count badge */}
@@ -1449,13 +1788,19 @@ export default function AdminDashboard() {
             const showEmpty = filteredAuditLogs.length === 0
             return (
               <>
-                <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#52525b' }}>
-                    {auditDateMode === 'date'
-                      ? `Showing logs for ${new Date(auditDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`
-                      : 'Showing all audit logs'}
-                  </span>
-                  <span style={{ background: '#27272a', color: '#a1a1aa', fontSize: '0.72rem', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', border: '1px solid #3d3d3d' }}>
+                <div style={{ marginBottom: '0.8rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <h2 style={{ margin: 0, fontSize: '1.6rem', color: '#fff', fontWeight: '900', letterSpacing: '-0.03em' }}>Audit Trail</h2>
+                  <span style={{ 
+                    background: 'rgba(255,255,255,0.1)', 
+                    color: '#ffffff', 
+                    fontSize: '0.72rem', 
+                    fontWeight: '900', 
+                    padding: '4px 12px', 
+                    borderRadius: '999px', 
+                    border: '1px solid #ffffff',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                  }}>
                     {filteredAuditLogs.length} records
                   </span>
                 </div>
@@ -1464,24 +1809,24 @@ export default function AdminDashboard() {
                   position: 'relative', 
                   borderRadius: '16px', 
                   overflow: 'hidden', 
-                  height: '600px', // Fixed height to prevent SVG filter bloat
                   display: 'flex',
-                  flexDirection: 'column'
+                  flexDirection: 'column',
+                  width: '100%'
                 }}>
-                  <GlassSurface width="100%" height="100%" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
+                  <GlassSurface width="100%" height="auto" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
                     <div style={{ 
                       width: '100%', 
-                      height: '100%',
+                      maxHeight: 'calc(100vh - 250px)',
                       boxSizing: 'border-box', 
-                      overflowY: 'auto', // Internal scrolling
+                      overflowY: 'auto', 
                       display: 'flex',
                       flexDirection: 'column'
                     }} className="custom-scrollbar">
                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead>
                           <tr style={{ 
-                            borderBottom: '1.5px solid #ffffff', 
-                            background: 'rgba(255,255,255,0.05)',
+                            borderBottom: '1px solid rgba(255,255,255,0.2)', 
+                            background: '#18181b',
                             position: 'sticky',
                             top: 0,
                             zIndex: 10
@@ -1554,7 +1899,7 @@ export default function AdminDashboard() {
 
                   return (
                     <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '1.2rem', color: '#a3a3a3', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '1.2rem', color: '#ffffff', opacity: 0.5, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                         {new Date(log.timestamp).toLocaleString()}
                       </td>
                       <td style={{ padding: '1.2rem' }}>

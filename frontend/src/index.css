@@ -425,7 +425,7 @@ th {
 
 /* ─── Dashboard Analytics Layout (Data Science Theme) ───────────────────────── */
 .supa-dashboard {
-  background-color: #121212;
+  background: transparent;
   color: #e5e7eb;
   padding: 1.5rem;
   border-radius: 12px;
@@ -439,19 +439,30 @@ th {
 }
 
 .supa-card {
-  background: #1e1e1e;
-  border: 1px solid #2d2d2d;
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 0.6px solid rgba(255,255,255,0.12);
   border-radius: 8px;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.supa-card:hover {
+  background: rgba(255,255,255,0.07) !important;
+  border-color: rgba(255,255,255,0.22) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
 }
 
 .supa-card-title {
   margin: 0 0 1rem 0;
   font-size: 1rem;
   font-weight: 500;
-  color: #d1d5db;
+  color: #ffffff;
+  opacity: 0.9;
 }
 
 .supa-stat-grid {
@@ -461,25 +472,35 @@ th {
 }
 
 .supa-stat {
-  background: #242424;
-  border: 1px solid #2d2d2d;
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 0.6px solid rgba(255,255,255,0.12);
   border-radius: 6px;
   padding: 1.2rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.supa-stat:hover {
+  background: rgba(255,255,255,0.09) !important;
+  border-color: rgba(255,255,255,0.22) !important;
+  transform: translateY(-1px);
 }
 
 .supa-stat-label {
   font-size: 0.85rem;
-  color: #9ca3af;
+  color: #ffffff;
+  opacity: 0.7;
   margin-bottom: 0.5rem;
 }
 
 .supa-stat-value {
   font-size: 2rem;
   font-weight: bold;
-  color: #34d399; /* Neon Mint */
+  color: #ffffff;
 }
 
 .chart-container {
@@ -500,6 +521,17 @@ th {
   margin: 0;
   color: #e5e7eb;
   font-size: 0.85rem;
+}
+
+.glass-card {
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-card:hover {
+  background: rgba(255,255,255,0.07) !important;
+  border-color: rgba(255,255,255,0.22) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35), 0 0 0 0.6px rgba(255,255,255,0.12);
 }
 
 @keyframes float {
