@@ -136,10 +136,17 @@ export default function AdminDashboard() {
       const key = new Date(a.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
       if (counts[key]) {
         const action = a.action?.toLowerCase() || ''
-        if (action.includes('upload')) counts[key].Uploads++
-        else if (action.includes('download')) counts[key].Downloads++
-        else if (action.includes('auth') || action.includes('login') || action.includes('signup')) counts[key].Auth++
-        else counts[key].Other++
+        // Match FILE_ENCRYPT_UPLOAD, upload, encrypt
+        if (action.includes('upload') || action.includes('encrypt'))
+          counts[key].Uploads++
+        // Match FILE_DECRYPT, download, decrypt
+        else if (action.includes('download') || action.includes('decrypt'))
+          counts[key].Downloads++
+        // Auth events
+        else if (action.includes('auth') || action.includes('login') || action.includes('signup'))
+          counts[key].Auth++
+        else
+          counts[key].Other++
       }
     })
     return Object.values(counts)
@@ -485,7 +492,9 @@ export default function AdminDashboard() {
             {currentTab === 'analytics'
               ? analyticsMode === 'all'
                 ? `All-time overview · ${audits.length} total events`
-                : (selectedDate === todayStr ? 'Real-time system health' : `Viewing: ${new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`)
+                : (selectedDate === todayStr
+                    ? `Today · ${filteredAudits.length} events`
+                    : `${new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · ${filteredAudits.length} events`)
               : 'System Administration'
             }
           </p>
@@ -493,38 +502,31 @@ export default function AdminDashboard() {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {currentTab === 'analytics' && (
             <>
-              {/* Mode toggle */}
-              <div style={{ display: 'flex', background: '#0a0a0a', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '3px', gap: '2px' }}>
-                {[['all', '📊 All Time'], ['date', '📅 By Date']].map(([mode, label]) => (
-                  <button
-                    key={mode}
-                    onClick={() => setAnalyticsMode(mode)}
-                    style={{
-                      background: analyticsMode === mode ? '#34d399' : 'transparent',
-                      color: analyticsMode === mode ? '#000' : '#71717a',
-                      border: 'none', borderRadius: '6px',
-                      padding: '5px 12px', fontSize: '0.78rem',
-                      fontWeight: analyticsMode === mode ? '700' : '500',
-                      cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap'
-                    }}
-                  >{label}</button>
-                ))}
+              {/* Date picker — always visible; picking a date activates date filter */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                <label style={{ fontSize: '0.7rem', color: '#52525b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Filter by Date</label>
+                <input
+                  type="date"
+                  value={analyticsMode === 'date' ? selectedDate : ''}
+                  max={todayStr}
+                  onChange={e => {
+                    if (e.target.value) {
+                      setSelectedDate(e.target.value)
+                      setAnalyticsMode('date')
+                    } else {
+                      setAnalyticsMode('all')
+                    }
+                  }}
+                  style={{ background: '#161616', color: analyticsMode === 'date' ? '#fff' : '#52525b', border: `1px solid ${analyticsMode === 'date' ? '#34d399' : '#2d2d2d'}`, borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none', transition: 'all 0.2s' }}
+                />
               </div>
+              {/* Clear pill — only shown when a date is active */}
               {analyticsMode === 'date' && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                  <label style={{ fontSize: '0.7rem', color: '#52525b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Viewing Date</label>
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    max={todayStr}
-                    onChange={e => setSelectedDate(e.target.value)}
-                    style={{ background: '#161616', color: '#fff', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
-                  />
-                </div>
-              )}
-              {analyticsMode === 'date' && selectedDate !== todayStr && (
-                <button onClick={() => setSelectedDate(todayStr)} style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.4rem 0.85rem', fontSize: '0.8rem', cursor: 'pointer' }}>
-                  Today
+                <button
+                  onClick={() => setAnalyticsMode('all')}
+                  style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.4rem 0.85rem', fontSize: '0.8rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  × All Time
                 </button>
               )}
             </>
@@ -693,67 +695,134 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* ── BOTTOM LEFT: Active Duration Pie Chart ─────────────────── */}
+          {/* ── BOTTOM LEFT: Event Composition Pie Chart ─────────────────── */}
           <div style={{ gridColumn: '1', gridRow: '2', display: 'flex', flexDirection: 'column' }}>
-            {/* User Activity Time Pie Chart */}
-            <div style={{ 
+            <div style={{
               flex: 1,
-              background: '#161616', 
-              border: '1px solid #2d2d2d', 
-              borderRadius: '8px', 
+              background: '#161616',
+              border: '1px solid #2d2d2d',
+              borderRadius: '8px',
               padding: '1.25rem',
               display: 'flex',
               flexDirection: 'column',
               minHeight: '300px',
-              transition: 'all 0.3s ease'
             }}>
-              <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600', marginBottom: '1rem' }}>Active Duration <span style={{ color: '#52525b', fontWeight: '400' }}>(min)</span></div>
-              <div style={{ flex: 1, minHeight: 0 }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600' }}>Event Composition</div>
+                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>
+                    {analyticsMode === 'all' ? 'All-time breakdown' : `Breakdown for ${selectedDate}`}
+                  </div>
+                </div>
+                {(() => {
+                  const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
+                  return (
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fff', lineHeight: 1 }}>{total}</div>
+                      <div style={{ fontSize: '0.68rem', color: '#52525b', marginTop: '2px' }}>total events</div>
+                    </div>
+                  )
+                })()}
+              </div>
+
+              {/* Donut chart */}
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  {userActivityTimeData.length > 0 ? (
-                    <PieChart>
-                      <Pie
-                        data={userActivityTimeData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={65}
-                        outerRadius={95}
-                        paddingAngle={5}
-                        dataKey="value"
-                        animationDuration={1000}
-                        animationEasing="ease-out"
-                      >
-                        {userActivityTimeData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="none" />
-                        ))}
-                      </Pie>
-                      <RechartsTooltip 
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
+                  {eventCompositionData.length > 0 ? (() => {
+                    const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
+                    const PIE_COLORS = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }
+                    return (
+                      <PieChart>
+                        <Pie
+                          data={eventCompositionData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={3}
+                          dataKey="value"
+                          animationDuration={900}
+                          animationEasing="ease-out"
+                          label={({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+                            if (percent < 0.05) return null
+                            const RADIAN = Math.PI / 180
+                            const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+                            const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                            const y = cy + radius * Math.sin(-midAngle * RADIAN)
                             return (
-                              <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', color: '#fff', boxShadow: '0 10px 15px rgba(0,0,0,0.5)' }}>
-                                <div style={{ color: payload[0].payload.fill, fontWeight: 'bold' }}>{payload[0].name}</div>
-                                <div style={{ marginTop: '4px' }}>{payload[0].value} active minutes</div>
+                              <text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="bold">
+                                {`${(percent * 100).toFixed(0)}%`}
+                              </text>
+                            )
+                          }}
+                          labelLine={false}
+                        >
+                          {eventCompositionData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={PIE_COLORS[entry.name] || COLORS[index % COLORS.length]} stroke="#161616" strokeWidth={2} />
+                          ))}
+                        </Pie>
+                        <RechartsTooltip
+                          content={({ active, payload }) => {
+                            if (!active || !payload?.length) return null
+                            const entry = payload[0]
+                            const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
+                            const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : 0
+                            const color = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }[entry.name] || '#fff'
+                            return (
+                              <div style={{ background: '#1e1e1e', border: `1px solid ${color}`, padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', color: '#fff', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
+                                <div style={{ color, fontWeight: 'bold', marginBottom: '4px' }}>{entry.name}</div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+                                  <span style={{ color: '#9ca3af' }}>Count</span>
+                                  <span style={{ fontWeight: 'bold' }}>{entry.value}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem' }}>
+                                  <span style={{ color: '#9ca3af' }}>Share</span>
+                                  <span style={{ fontWeight: 'bold' }}>{pct}%</span>
+                                </div>
                               </div>
                             )
-                          }
-                          return null
-                        }}
-                      />
-                    </PieChart>
-                  ) : (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '0.8rem' }}>No session data</div>
+                          }}
+                        />
+                      </PieChart>
+                    )
+                  })() : (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '0.8rem' }}>No events yet</div>
                   )}
                 </ResponsiveContainer>
               </div>
-              <div style={{ marginTop: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                {userActivityTimeData.slice(0, 6).map((d, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: COLORS[i % COLORS.length], flexShrink: 0 }} />
-                    <span style={{ fontSize: '0.7rem', color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+
+              {/* Legend with values and percentages */}
+              {(() => {
+                const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
+                const PIE_COLORS = { Uploads: '#34d399', Downloads: '#3b82f6', Auth: '#facc15', Other: '#a855f7' }
+                return (
+                  <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {eventCompositionData.map((d, i) => {
+                      const color = PIE_COLORS[d.name] || COLORS[i % COLORS.length]
+                      const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : 0
+                      const barW = total > 0 ? (d.value / total) * 100 : 0
+                      return (
+                        <div key={i}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: color, flexShrink: 0 }} />
+                              <span style={{ fontSize: '0.75rem', color: '#e5e7eb', fontWeight: '500' }}>{d.name}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.72rem', color: '#52525b' }}>{pct}%</span>
+                              <span style={{ fontSize: '0.75rem', color: color, fontWeight: 'bold', minWidth: '24px', textAlign: 'right' }}>{d.value}</span>
+                            </div>
+                          </div>
+                          <div style={{ height: '3px', background: '#2d2d2d', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${barW}%`, background: color, borderRadius: '2px', transition: 'width 0.8s ease' }} />
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                ))}
-              </div>
+                )
+              })()}
             </div>
           </div>
 
@@ -871,39 +940,57 @@ export default function AdminDashboard() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                 <div>
                   <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600' }}>14-Day Activity Trend</div>
-                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>Uploads · Downloads · Auth events · Other</div>
+                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>Per-day file operations and auth events</div>
                 </div>
-                <div style={{ display: 'flex', gap: '10px', fontSize: '0.7rem' }}>
-                  {[['#34d399','Uploads'],['#3b82f6','Downloads'],['#facc15','Auth'],['#a855f7','Other']].map(([c,l]) => (
-                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#9ca3af' }}>
-                      <span style={{ width: '8px', height: '8px', background: c, borderRadius: '2px', display: 'inline-block' }} />{l}
+                <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem' }}>
+                  {[
+                    ['#34d399', 'Uploads'],
+                    ['#3b82f6', 'Downloads'],
+                    ['#facc15', 'Auth'],
+                    ['#a855f7', 'Other']
+                  ].map(([c, l]) => (
+                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#9ca3af' }}>
+                      <span style={{ width: '10px', height: '10px', background: c, borderRadius: '3px', display: 'inline-block', flexShrink: 0 }} />
+                      <span>{l}</span>
                     </span>
                   ))}
                 </div>
               </div>
-              <div style={{ height: '120px' }}>
+              <div style={{ height: '150px' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {activityData.some(d => d.Uploads + d.Downloads + d.Auth + d.Other > 0) ? (
-                    <BarChart data={activityData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }} barGap={2}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" vertical={false} />
+                    <BarChart data={activityData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }} barCategoryGap="20%" barGap={2}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1f1f1f" vertical={false} />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} allowDecimals={false} />
                       <RechartsTooltip
-                        cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                        cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null
+                          const total = payload.reduce((s, p) => s + (p.value || 0), 0)
                           return (
-                            <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.78rem', color: '#fff' }}>
-                              <div style={{ color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>{label}</div>
-                              {payload.map((p, i) => p.value > 0 && <div key={i} style={{ color: p.fill }}>{p.name}: {p.value}</div>)}
+                            <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '10px 14px', borderRadius: '8px', fontSize: '0.78rem', color: '#fff', minWidth: '140px' }}>
+                              <div style={{ color: '#9ca3af', marginBottom: '6px', fontWeight: 'bold', borderBottom: '1px solid #2d2d2d', paddingBottom: '4px' }}>{label}</div>
+                              {payload.map((p, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '3px' }}>
+                                  <span style={{ color: p.fill, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    <span style={{ width: '8px', height: '8px', background: p.fill, borderRadius: '2px', display: 'inline-block' }} />
+                                    {p.name}
+                                  </span>
+                                  <span style={{ fontWeight: 'bold' }}>{p.value}</span>
+                                </div>
+                              ))}
+                              <div style={{ borderTop: '1px solid #2d2d2d', marginTop: '4px', paddingTop: '4px', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>Total</span><span style={{ fontWeight: 'bold' }}>{total}</span>
+                              </div>
                             </div>
                           )
                         }}
                       />
-                      <Bar dataKey="Uploads" stackId="a" fill="#34d399" animationDuration={800} />
-                      <Bar dataKey="Downloads" stackId="a" fill="#3b82f6" animationDuration={800} />
-                      <Bar dataKey="Auth" stackId="a" fill="#facc15" animationDuration={800} />
-                      <Bar dataKey="Other" stackId="a" fill="#a855f7" radius={[2,2,0,0]} animationDuration={800} />
+                      <Bar dataKey="Uploads" fill="#34d399" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Downloads" fill="#3b82f6" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Auth" fill="#facc15" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Other" fill="#a855f7" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
                     </BarChart>
                   ) : (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '0.8rem' }}>No events in the last 14 days</div>
