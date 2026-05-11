@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../services/supabase'
+import GlassSurface from '../components/GlassSurface'
 
 export default function Login() {
   const nav = useNavigate()
@@ -27,7 +28,7 @@ export default function Login() {
         const data = await res.json()
         if (!res.ok) throw new Error(data.detail || 'Wrong password')
         sessionStorage.setItem('session', JSON.stringify(data))
-        setStatus({ msg: '✅ Admin Access Granted', type: 'success' })
+        setStatus({ msg: '✔ Admin Access Granted', type: 'success' })
         setTimeout(() => nav('/dashboard'), 800)
       } catch (err) {
         setStatus({ msg: `❌ ${err.message}`, type: 'error' })
@@ -51,7 +52,7 @@ export default function Login() {
       const token = data.session.access_token
 
       sessionStorage.setItem('session', JSON.stringify({ username, email: user.email, role, token }))
-      setStatus({ msg: '✅ Access Granted', type: 'success' })
+      setStatus({ msg: '✔ Access Granted', type: 'success' })
       setTimeout(() => nav('/dashboard'), 800)
     } catch (err) {
       setStatus({ msg: `❌ ${err.message}`, type: 'error' })
@@ -61,39 +62,48 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-page">
-      <div className="card">
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h1>🔒 VaultSync</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Secure Zero-Knowledge Access</p>
-        </div>
+    <div className="auth-page" style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '2rem 5vw', justifyContent: 'center' }}>
+      <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+        <div style={{ position: 'relative', borderRadius: '24px', overflow: 'hidden' }}>
+          <GlassSurface width="100%" height="100%" borderRadius={24} blur={20} opacity={0.35} brightness={40} saturation={1.5}>
+            <div style={{ padding: '3rem 2rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                <h1 style={{ fontSize: '2.4rem', fontWeight: 700, filter: 'brightness(0) invert(1)' }}>VaultSync</h1>
+              </div>
 
-        <form onSubmit={handleLogin}>
-          <div className="form-group">
-            <label>Email Address</label>
-            <input type="email" value={form.email} onChange={set('email')} required placeholder="Enter your email" />
-          </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input type="password" value={form.password} onChange={set('password')} required placeholder="Enter password" />
-          </div>
+              <form onSubmit={handleLogin}>
+                <div className="form-group">
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Email Address</label>
+                  <input type="email" value={form.email} onChange={set('email')} required placeholder="Enter your Email" style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700 }} />
+                </div>
+                <div className="form-group">
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Password</label>
+                  <input type="password" value={form.password} onChange={set('password')} required placeholder="Enter password" style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700 }} />
+                </div>
 
-          <div style={{ textAlign: 'right', marginTop: '-0.5rem', marginBottom: '1rem' }}>
-            <Link to="/forgot-password" style={{ color: 'var(--primary)', fontSize: '0.85rem', textDecoration: 'none' }}>
-              Forgot Password?
-            </Link>
-          </div>
+                <div style={{ textAlign: 'right', marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+                  <Link to="/forgot-password" style={{ color: '#ffffff', fontSize: '0.85rem', textDecoration: 'none', fontWeight: 700 }}>
+                    Forgot Password?
+                  </Link>
+                </div>
 
-          <button className="btn btn-primary" disabled={loading}>
-            {loading ? 'Authenticating...' : 'Sign In'}
-          </button>
-        </form>
+                <button className="btn btn-primary" disabled={loading} style={{ width: '100%', background: 'rgba(255,255,255,0.15)', border: '1.5px solid #ffffff', color: '#ffffff', fontWeight: 700 }}>
+                  {loading ? 'Authenticating...' : 'Sign In'}
+                </button>
+              </form>
 
-        {status.msg && <div className={`status ${status.type}`}>{status.msg}</div>}
+              {status.msg && (
+                <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '12px', fontSize: '0.9rem', textAlign: 'center', fontWeight: 700, color: '#ffffff', background: status.type === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)', border: '1.5px solid #ffffff' }}>
+                  {status.msg}
+                </div>
+              )}
 
-        <div style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)' }}>
-          New to VaultSync?{' '}
-          <Link to="/signup" style={{ color: 'var(--primary)', textDecoration: 'none' }}>Create Account</Link>
+              <div style={{ textAlign: 'center', marginTop: '2rem', color: '#ffffff', fontWeight: 400, fontSize: '0.9rem' }}>
+                New to VaultSync?{' '}
+                <Link to="/signup" style={{ color: '#ffffff', textDecoration: 'underline', fontWeight: 700 }}>Create Account</Link>
+              </div>
+            </div>
+          </GlassSurface>
         </div>
       </div>
     </div>

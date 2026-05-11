@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../services/supabase'
 import { syncUser } from '../services/api'
+import GlassSurface from '../components/GlassSurface'
 
 export default function Signup() {
   const nav = useNavigate()
@@ -53,7 +54,7 @@ export default function Signup() {
           role: 'user',
           token
         }))
-        setStatus({ msg: '✅ Account created!', type: 'success' })
+        setStatus({ msg: '✔ Account created!', type: 'success' })
         setTimeout(() => nav('/dashboard'), 800)
       } else {
         // Email confirmation is ON — show confirmation message
@@ -68,57 +69,75 @@ export default function Signup() {
 
   if (done) {
     return (
-      <div className="auth-page">
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📬</div>
-          <h2>Check Your Email!</h2>
-          <p style={{ color: 'var(--text-muted)', marginTop: '1rem', lineHeight: '1.8' }}>
-            We sent a verification link to <strong style={{ color: 'var(--primary)' }}>{form.email}</strong>.
-            <br />Click the link in your email to activate your account.
-          </p>
-          <button className="btn btn-outline" style={{ marginTop: '2rem' }} onClick={() => nav('/login')}>
-            Back to Login
-          </button>
+      <div className="auth-page" style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '2rem 5vw', justifyContent: 'center' }}>
+        <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+          <div style={{ position: 'relative', borderRadius: '24px', overflow: 'hidden' }}>
+            <GlassSurface width="100%" height="100%" borderRadius={24} blur={20} opacity={0.35} brightness={40} saturation={1.5}>
+              <div style={{ padding: '3rem 2rem', width: '100%', boxSizing: 'border-box', textAlign: 'center' }}>
+                <div style={{ fontSize: '4rem', marginBottom: '1rem', filter: 'brightness(0) invert(1)' }}>📬</div>
+                <h2 style={{ fontSize: '2rem', fontWeight: 700, color: '#ffffff' }}>Check Your Email!</h2>
+                <p style={{ color: '#ffffff', marginTop: '1rem', lineHeight: '1.8', fontWeight: 500 }}>
+                  We sent a verification link to <strong style={{ color: '#ffffff', fontWeight: 800 }}>{form.email}</strong>.
+                  <br />Click the link in your email to activate your account.
+                </p>
+                <button 
+                  style={{ marginTop: '2rem', width: '100%', padding: '1rem', background: 'rgba(255,255,255,0.15)', border: '1.5px solid #ffffff', borderRadius: '14px', color: '#ffffff', fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => nav('/login')}
+                >
+                  Back to Login
+                </button>
+              </div>
+            </GlassSurface>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="auth-page">
-      <div className="card">
-        <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h2>🚀 Create Account</h2>
-          <p style={{ color: 'var(--text-muted)' }}>Join VaultSync 2.0</p>
-        </div>
+    <div className="auth-page" style={{ position: 'relative', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '2rem 5vw', justifyContent: 'center' }}>
+      <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto', position: 'relative', zIndex: 1 }}>
+        <div style={{ position: 'relative', borderRadius: '24px', overflow: 'hidden' }}>
+          <GlassSurface width="100%" height="100%" borderRadius={24} blur={20} opacity={0.35} brightness={40} saturation={1.5}>
+            <div style={{ padding: '3rem 2rem', width: '100%', boxSizing: 'border-box' }}>
+              <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                <h2 style={{ fontSize: '2.4rem', fontWeight: 700, filter: 'brightness(0) invert(1)' }}>Create Account</h2>
+              </div>
 
-        <form onSubmit={handleSignup}>
-          <div className="form-group">
-            <label>Username</label>
-            <input value={form.username} onChange={set('username')} placeholder="Choose a username" required />
-          </div>
-          <div className="form-group">
-            <label>Email Address</label>
-            <input type="email" value={form.email} onChange={set('email')} placeholder="Enter real email (for password reset)" required />
-          </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input type="password" value={form.password} onChange={set('password')} placeholder="Min 8 characters" required />
-          </div>
-          <div className="form-group">
-            <label>Confirm Password</label>
-            <input type="password" value={form.confirm} onChange={set('confirm')} placeholder="Repeat password" required />
-          </div>
-          <button className="btn btn-primary" disabled={loading} style={{ marginTop: '1rem' }}>
-            {loading ? 'Creating...' : 'Create Account'}
-          </button>
-        </form>
+              <form onSubmit={handleSignup}>
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Username</label>
+                  <input value={form.username} onChange={set('username')} placeholder="Choose a username" required style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700, padding: '0.85rem 1rem', borderRadius: '12px', width: '100%', boxSizing: 'border-box', marginTop: '0.5rem' }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Email Address</label>
+                  <input type="email" value={form.email} onChange={set('email')} placeholder="Enter your Email" required style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700, padding: '0.85rem 1rem', borderRadius: '12px', width: '100%', boxSizing: 'border-box', marginTop: '0.5rem' }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Password</label>
+                  <input type="password" value={form.password} onChange={set('password')} placeholder="Min 8 characters" required style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700, padding: '0.85rem 1rem', borderRadius: '12px', width: '100%', boxSizing: 'border-box', marginTop: '0.5rem' }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ color: '#ffffff', fontWeight: 700 }}>Confirm Password</label>
+                  <input type="password" value={form.confirm} onChange={set('confirm')} placeholder="Repeat password" required style={{ background: 'rgba(255,255,255,0.07)', border: '1.5px solid rgba(255,255,255,0.3)', color: '#ffffff', fontWeight: 700, padding: '0.85rem 1rem', borderRadius: '12px', width: '100%', boxSizing: 'border-box', marginTop: '0.5rem' }} />
+                </div>
+                <button disabled={loading} style={{ width: '100%', padding: '1rem', background: 'rgba(255,255,255,0.15)', border: '1.5px solid #ffffff', borderRadius: '14px', color: '#ffffff', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+                  {loading ? 'Creating...' : 'Create Account'}
+                </button>
+              </form>
 
-        {status.msg && <div className={`status ${status.type}`}>{status.msg}</div>}
+              {status.msg && (
+                <div style={{ marginTop: '1.5rem', padding: '1rem', borderRadius: '12px', fontSize: '0.9rem', textAlign: 'center', fontWeight: 700, color: '#ffffff', background: status.type === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)', border: '1.5px solid #ffffff' }}>
+                  {status.msg}
+                </div>
+              )}
 
-        <div style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--text-muted)' }}>
-          Already have an account?{' '}
-          <Link to="/login" style={{ color: 'var(--primary)', textDecoration: 'none' }}>Log In</Link>
+              <div style={{ textAlign: 'center', marginTop: '2rem', color: '#ffffff', fontWeight: 400, fontSize: '0.9rem' }}>
+                Already have an account?{' '}
+                <Link to="/login" style={{ color: '#ffffff', textDecoration: 'underline', fontWeight: 700 }}>Log In</Link>
+              </div>
+            </div>
+          </GlassSurface>
         </div>
       </div>
     </div>

@@ -1,16 +1,16 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --bg-dark: #050b14;
-  --bg-card: rgba(15, 23, 42, 0.6);
-  --primary: #00c2ff;
-  --primary-glow: rgba(0, 194, 255, 0.4);
-  --secondary: #6366f1;
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
+  --bg-dark: #000000;
+  --bg-card: rgba(20, 20, 20, 0.6);
+  --primary: #ffffff;
+  --primary-glow: rgba(255, 255, 255, 0.4);
+  --secondary: #a3a3a3;
+  --text-main: #ffffff;
+  --text-muted: #a3a3a3;
   --border: rgba(255, 255, 255, 0.1);
   --error: #ef4444;
-  --success: #10b981;
+  --success: #ffffff;
 }
 
 * {
@@ -27,10 +27,6 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-image: 
-    radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.15), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(0, 194, 255, 0.15), transparent 25%);
-  background-attachment: fixed;
 }
 
 #root {
@@ -45,7 +41,7 @@ body {
   background: var(--bg-card);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border);
+  border: 1px solid white;
   border-radius: 24px;
   padding: 2.5rem;
   width: 100%;
@@ -54,11 +50,7 @@ body {
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6), 0 0 20px var(--primary-glow);
-  border-color: rgba(255,255,255,0.15);
-}
+/* Card hover effect removed */
 
 /* Typography */
 h1, h2, h3 {
@@ -78,32 +70,62 @@ h1, h2, h3 {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 input, select {
   width: 100%;
-  padding: 0.8rem 1rem;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border);
+  padding: 0.85rem 1.1rem;
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  background-image: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  color: white;
+  color: #ffffff !important;
   font-family: inherit;
   font-size: 1rem;
-  transition: all 0.2s ease;
+  font-weight: 700;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+}
+
+/* Prevent browser autofill from changing background to white/yellow */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0px 1000px rgba(30, 30, 30, 1) inset !important;
+  background-image: none !important;
+  transition: background-color 5000s ease-in-out 0s;
+  font-weight: 700 !important;
 }
 
 input:focus, select:focus {
-  outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-glow);
+  outline: none !important;
+  border-color: #ffffff !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* Absolute nuclear option for background injections */
+input, input:focus, input:hover, input:active {
+  background-image: none !important;
+}
+
+/* Block pseudo-elements often used by extensions */
+input::before, input::after {
+  display: none !important;
+  content: none !important;
 }
 
 select option {
-  background: var(--bg-dark);
-  color: white;
+  background: #000000;
+  color: #ffffff;
+  font-weight: 700;
 }
 
 /* Buttons */
@@ -124,9 +146,11 @@ select option {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  color: white;
-  box-shadow: 0 4px 15px var(--primary-glow);
+  background: #ffffff;
+  color: #000000;
+  font-weight: 700;
+  border: 1px solid #000000;
+  box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -175,7 +199,6 @@ select option {
   justify-content: space-between;
   align-items: center;
   padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border);
 }
 
 .header h1 {
@@ -222,8 +245,7 @@ select option {
 
 .action-card:hover {
   transform: translateY(-5px);
-  border-color: var(--primary);
-  box-shadow: 0 10px 30px -10px rgba(0, 194, 255, 0.2);
+  box-shadow: 0 10px 30px -10px rgba(255, 255, 255, 0.2);
 }
 
 .action-card:hover::before {
@@ -252,8 +274,7 @@ select option {
 }
 
 .upload-zone:hover {
-  border-color: var(--primary);
-  background: rgba(0, 194, 255, 0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* File List */
@@ -313,13 +334,13 @@ select option {
 /* Modals */
 .modal-overlay {
   position: fixed;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0,0,0,0.8);
-  backdrop-filter: blur(8px);
+  inset: 0;
+  background: rgba(0,0,0,0.1);
+  backdrop-filter: blur(16px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2000;
   animation: fadeIn 0.2s ease;
 }
 
@@ -349,8 +370,8 @@ select option {
   animation: fadeIn 0.3s ease;
 }
 .status.error { background: rgba(239, 68, 68, 0.1); color: var(--error); border: 1px solid rgba(239, 68, 68, 0.2); }
-.status.success { background: rgba(16, 185, 129, 0.1); color: var(--success); border: 1px solid rgba(16, 185, 129, 0.2); }
-.status.info { background: rgba(99, 102, 241, 0.1); color: var(--secondary); border: 1px solid rgba(99, 102, 241, 0.2); }
+.status.success { background: rgba(255, 255, 255, 0.1); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.2); }
+.status.info { background: rgba(255, 255, 255, 0.1); color: var(--secondary); border: 1px solid rgba(255, 255, 255, 0.2); }
 
 /* Table */
 table {
@@ -479,4 +500,9 @@ th {
   margin: 0;
   color: #e5e7eb;
   font-size: 0.85rem;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px) scale(1); }
+  100% { transform: translateY(-30px) scale(1.1); }
 }

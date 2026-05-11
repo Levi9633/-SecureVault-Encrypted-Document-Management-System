@@ -26,12 +26,15 @@ HEADS = {
 }
 TIMEOUT = 20
 
+session = requests.Session()
+session.headers.update(HEADS)
+
 # We now only use a unified users table and an audit_logs table
 USERS_TABLE = "users"
 AUDIT_TABLE = "audit_logs"
 
 def db_select(table: str, field: str, value: str):
-    r = requests.get(f"{BASE}/{table}?{field}=eq.{value}", headers=HEADS, timeout=TIMEOUT)
+    r = session.get(f"{BASE}/{table}?{field}=eq.{value}", timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 
@@ -41,19 +44,19 @@ def db_get_all(table: str, order: str = None, limit: int = 500, filters: str = N
         params += f"&order={order}"
     if filters:
         params += f"&{filters}"
-    r = requests.get(f"{BASE}/{table}{params}", headers=HEADS, timeout=TIMEOUT)
+    r = session.get(f"{BASE}/{table}{params}", timeout=TIMEOUT)
     if r.status_code == 404 or r.status_code == 400:
         return []
     r.raise_for_status()
     return r.json()
 
 def db_insert(table: str, data: dict):
-    r = requests.post(f"{BASE}/{table}", headers=HEADS, json=data, timeout=TIMEOUT)
+    r = session.post(f"{BASE}/{table}", json=data, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 
 def db_update(table: str, field: str, value: str, data: dict):
-    r = requests.patch(f"{BASE}/{table}?{field}=eq.{value}", headers=HEADS, json=data, timeout=TIMEOUT)
+    r = session.patch(f"{BASE}/{table}?{field}=eq.{value}", json=data, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 
@@ -90,23 +93,24 @@ def log_audit_event(username: str, action: str, request=None, status: str = "SUC
         print(f"[AUDIT LOG FAILED] {e}")
 
 def storage_upload(bucket: str, path: str, data: bytes, content_type: str = "application/octet-stream"):
-    url = f"{STORE}/object/{bucket}/{path}"
+    import urllib.parse
+    # URL encode the path to handle spaces and special characters safely
+    encoded_path = urllib.parse.quote(path)
+    url = f"{STORE}/object/{bucket}/{encoded_path}"
     h = {
-        "apikey":        SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type":  content_type,
+        "x-upsert":      "true",
     }
-    r = requests.post(url, headers=h, data=data, timeout=TIMEOUT)
+    r = session.post(url, headers=h, data=data, timeout=TIMEOUT)
+    if r.status_code >= 400:
+        print(f"[STORAGE UPLOAD ERROR] {r.status_code} {r.text}")
     r.raise_for_status()
     return r.json()
 
 def storage_list(bucket: str, folder: str = ""):
     url = f"{STORE}/object/list/{bucket}"
-    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-         "Content-Type": "application/json"}
-    
     prefix = folder + "/" if folder else ""
-    r = requests.post(url, headers=h, json={"prefix": prefix, "limit": 500}, timeout=TIMEOUT)
+    r = session.post(url, json={"prefix": prefix, "limit": 500}, timeout=TIMEOUT)
     if r.status_code == 404 or r.status_code == 400:
         return []
     r.raise_for_status()
@@ -114,16 +118,13 @@ def storage_list(bucket: str, folder: str = ""):
 
 def storage_download(bucket: str, path: str) -> bytes:
     url = f"{STORE}/object/{bucket}/{path}"
-    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    r = requests.get(url, headers=h, timeout=TIMEOUT)
+    r = session.get(url, timeout=TIMEOUT)
     r.raise_for_status()
     return r.content
 
 def create_bucket_if_needed(bucket: str):
     """Create bucket if it doesn't exist yet."""
     url = f"{STORE}/bucket"
-    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-         "Content-Type": "application/json"}
-    info = requests.get(f"{url}/{bucket}", headers=h, timeout=TIMEOUT)
+    info = session.get(f"{url}/{bucket}", timeout=TIMEOUT)
     if info.status_code == 400 or info.status_code == 404:
-        requests.post(url, headers=h, json={"id": bucket, "name": bucket, "public": False}, timeout=TIMEOUT)
+        session.post(url, json={"id": bucket, "name": bucket, "public": False}, timeout=TIMEOUT)

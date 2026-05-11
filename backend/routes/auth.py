@@ -67,6 +67,6 @@ def verify_supabase_token(token: str) -> dict:
         username = metadata.get("username", user_data.get("email", "").split("@")[0])
         role = metadata.get("role", "user")
         
-        return {"sub": user_data.get("id"), "role": role, "username": username}
+        return {"sub": user_data.get("id"), "role": role, "username": username, "email": user_data.get("email")}
     except requests.exceptions.RequestException as e:
         raise HTTPException(503, f"Failed to verify token with Supabase: {e}")

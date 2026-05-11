@@ -136,13 +136,92 @@ def get_users(authorization: str = Header(default="")):
 @router.delete("/users/{user_id}")
 def delete_user(user_id: str, authorization: str = Header(default="")):
     check_admin(authorization)
-    # 1. Delete from Supabase Auth
+    errors = []
+
+    # ── Step 1: Get user info BEFORE deleting (need email/username for DB + storage cleanup) ──
+    user_email = None
+    user_username = None
     try:
-        requests.delete(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=HEADS, timeout=TIMEOUT)
-    except: pass
+        r = requests.get(f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}", headers=HEADS, timeout=TIMEOUT)
+        if r.status_code == 200:
+            u = r.json()
+            user_email = u.get("email")
+            meta = u.get("user_metadata", {})
+            user_username = meta.get("username") or (user_email.split("@")[0] if user_email else None)
+    except Exception as e:
+        errors.append(f"Info fetch failed: {e}")
+
+    # ── Step 2: Delete from Supabase Auth (permanent — user cannot log in) ──
+    try:
+        r = requests.delete(
+            f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}",
+            headers=HEADS, timeout=TIMEOUT
+        )
+        if not r.ok:
+            errors.append(f"Auth delete failed: {r.status_code} {r.text}")
+    except Exception as e:
+        errors.append(f"Auth delete exception: {e}")
+
+    # ── Step 3: Delete from local users table ──
+    if user_email:
+        try:
+            # Try matching by email column (gmail or email field)
+            r1 = requests.delete(
+                f"{SUPABASE_URL}/rest/v1/users?gmail=eq.{user_email}",
+                headers=HEADS, timeout=TIMEOUT
+            )
+            r2 = requests.delete(
+                f"{SUPABASE_URL}/rest/v1/users?email=eq.{user_email}",
+                headers=HEADS, timeout=TIMEOUT
+            )
+        except Exception as e:
+            errors.append(f"DB delete exception: {e}")
+
+    # ── Step 4: Purge all files from user's storage bucket ──
+    if user_username:
+        try:
+            from services.supabase_service import storage_list, STORE, SUPABASE_KEY
+            storage_heads = {
+                "apikey": SUPABASE_KEY,
+                "Authorization": f"Bearer {SUPABASE_KEY}",
+                "Content-Type": "application/json"
+            }
+            # List all files in their bucket/main folder
+            files = storage_list(user_username, folder="main")
+            if isinstance(files, list) and len(files) > 0:
+                file_paths = [f"main/{f['name']}" for f in files if f.get("name")]
+                if file_paths:
+                    # Supabase Storage batch delete endpoint
+                    del_r = requests.delete(
+                        f"{STORE}/object/{user_username}",
+                        headers=storage_heads,
+                        json={"prefixes": file_paths},
+                        timeout=TIMEOUT
+                    )
+                    if not del_r.ok:
+                        errors.append(f"Storage delete failed: {del_r.status_code} {del_r.text}")
+        except Exception as e:
+            errors.append(f"Storage purge exception: {e}")
+
+    # ── Step 5: Wipe audit_logs for this user ──
+    if user_username:
+        try:
+            requests.delete(
+                f"{SUPABASE_URL}/rest/v1/audit_logs?username=eq.{user_username}",
+                headers=HEADS, timeout=TIMEOUT
+            )
+        except Exception as e:
+            errors.append(f"Audit log wipe exception: {e}")
+
+    if errors:
+        print(f"[DELETE USER] Completed with warnings: {errors}")
     
-    # 2. Delete from our users table is handled by the user (or we could find by email)
-    return {"message": "User deletion requested"}
+    return {
+        "message": "User permanently deleted",
+        "user_id": user_id,
+        "email": user_email,
+        "warnings": errors
+    }
 
 @router.post("/users/{user_id}/toggle-block")
 def toggle_user_block(user_id: str, block: bool, authorization: str = Header(default="")):

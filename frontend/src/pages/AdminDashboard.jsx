@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts'
+import GlassSurface from '../components/GlassSurface'
 
 const COLORS = ['#34d399', '#3b82f6', '#facc15', '#ec4899', '#a855f7', '#06b6d4']
 
@@ -43,13 +44,22 @@ export default function AdminDashboard() {
   const [sessionExpired, setSessionExpired] = useState(false)
   const [endpointFilter, setEndpointFilter] = useState('All')
   const [endpointRole, setEndpointRole] = useState('Admin')
-  const rtScrollRef = useRef(null)
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [analyticsMode, setAnalyticsMode] = useState('all') // 'all' | 'date'
+  const [auditDateMode, setAuditDateMode] = useState('all') // 'all' | 'date'
+  const [auditDate, setAuditDate] = useState(new Date().toISOString().split('T')[0])
+
+  const todayStr = new Date().toISOString().split('T')[0]
 
   useEffect(() => {
     fetchData()
-    const interval = setInterval(fetchData, 60000)
-    return () => clearInterval(interval)
-  }, [])
+    const isToday = selectedDate === todayStr
+    let interval
+    if (isToday) {
+      interval = setInterval(fetchData, 60000)
+    }
+    return () => { if (interval) clearInterval(interval) }
+  }, [selectedDate])
 
   const fetchData = async () => {
     try {
@@ -100,6 +110,16 @@ export default function AdminDashboard() {
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
+
+  // ─── Date filtering (respects analyticsMode: 'all' = no filter, 'date' = filter by selectedDate) ─
+  const filteredAudits = useMemo(() => {
+    if (analyticsMode === 'all') return audits
+    return audits.filter(a => {
+      if (!a.timestamp) return false
+      const d = new Date(a.timestamp).toISOString().split('T')[0]
+      return d === selectedDate
+    })
+  }, [audits, selectedDate, analyticsMode])
 
   // ─── Data Science Processors (Analytics Tab) ─────────────────────────────────
 
@@ -171,12 +191,12 @@ export default function AdminDashboard() {
   const userActivityData = useMemo(() => {
     const data = {}
     
-    audits.forEach(a => {
+    filteredAudits.forEach(a => {
       const finalUser = cleanUser(a.username)
       
       const lower = finalUser.toLowerCase()
-      const isSystem = ['system', 'admin', 'guest', 'unknown', 'gateway', 'service_role', 'supabase_admin'].some(s => lower.includes(s))
-      if (isSystem) return
+      const isSystem = ['system', 'admin', 'guest', 'unknown', 'gateway', 'service_role', 'supabase_admin'].some(s => lower === s)
+      if (isSystem || lower === '') return
       
       if (!data[finalUser]) data[finalUser] = { name: finalUser, api: 0, uploads: 0, downloads: 0 }
       
@@ -191,21 +211,24 @@ export default function AdminDashboard() {
         data[finalUser].downloads++
       } else if (action === 'API_REQUEST') {
         data[finalUser].api++
+      } else {
+        // Any other action (Auth, Encrypt, etc.) counts as an API interaction
+        data[finalUser].api++
       }
     })
     
     return Object.values(data)
       .sort((a, b) => (b.api + b.uploads + b.downloads) - (a.api + a.uploads + a.downloads))
       .slice(0, 12)
-  }, [audits, userMapping])
+  }, [filteredAudits, userMapping])
 
   const userActivityTimeData = useMemo(() => {
     const userBuckets = {} 
     
-    audits.forEach(a => {
+    filteredAudits.forEach(a => {
       const finalUser = cleanUser(a.username)
 
-      if (['system', 'admin', 'guest', 'unknown', 'service_role'].some(s => finalUser.toLowerCase().includes(s))) return
+      if (['system', 'guest', 'unknown', 'service_role', 'supabase_admin'].some(s => finalUser.toLowerCase() === s)) return
       
       const ts = new Date(a.timestamp).getTime()
       if (isNaN(ts)) return
@@ -219,13 +242,13 @@ export default function AdminDashboard() {
       name: user,
       value: userBuckets[user].size * 5
     })).sort((a,b) => b.value - a.value).slice(0, 8)
-  }, [audits, userMapping])
+  }, [filteredAudits, userMapping])
 
 
   // ─── API Gateway Processors (API Tab) ────────────────────────────────────────
 
   const apiLogs = useMemo(() => {
-    return audits.map(a => {
+    return filteredAudits.map(a => {
       let data = {}
       try { data = JSON.parse(a.details) } catch(e){}
       
@@ -243,7 +266,7 @@ export default function AdminDashboard() {
       
       return { ...a, ...data }
     }).filter(a => a.endpoint)
-  }, [audits])
+  }, [filteredAudits])
 
   const [usersList, setUsersList] = useState([])
   const [userLoading, setUserLoading] = useState(false)
@@ -305,32 +328,39 @@ export default function AdminDashboard() {
 
   const apiChartData = useMemo(() => {
     if (apiLogs.length === 0) return []
-    
-    // Performance optimization: Render max 500 individual bars to avoid SVG lag
-    return apiLogs
-      .filter(a => a.action === 'API_REQUEST' && (a.ms ?? 0) > 0)
-      .slice(-500) 
-      .map((a, i) => {
-        const isError = (a.status || 200) >= 400;
-        return {
-          name: i,
-          timeLabel: new Date(a.timestamp).toLocaleString(),
-          Requests: 1,
-          SuccessCount: isError ? 0 : 1,
-          ErrorCount: isError ? 1 : 0,
-          ResponseTime: a.ms,
-          Status: a.status || 200,
-          Endpoint: a.endpoint || 'Unknown'
-        }
-      })
+    const reqs = apiLogs.filter(a => a.action === 'API_REQUEST' && (a.ms ?? 0) > 0)
+    if (reqs.length === 0) return []
+    const times = reqs.map(a => new Date(a.timestamp).getTime()).filter(t => !isNaN(t))
+    const minTime = Math.min(...times)
+    const maxTime = Math.max(...times)
+    const spanMs = maxTime - minTime
+    const groupMs = Math.max(10 * 1000, spanMs / 50)
+    const buckets = {}
+    reqs.forEach(a => {
+      const tsRaw = new Date(a.timestamp).getTime()
+      if (isNaN(tsRaw)) return
+      const ts = Math.floor(tsRaw / groupMs) * groupMs
+      if (!buckets[ts]) {
+        const d = new Date(ts)
+        let timeLabel = ''
+        if (groupMs < 60000) timeLabel = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        else if (groupMs < 86400000) timeLabel = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        else timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        buckets[ts] = { ts, timeLabel, totalMs: 0, count: 0, worstStatus: 200, endpoints: new Set() }
+      }
+      buckets[ts].totalMs += a.ms
+      buckets[ts].count += 1
+      const status = a.status || 200
+      if (status > buckets[ts].worstStatus) buckets[ts].worstStatus = status
+      if (a.endpoint) buckets[ts].endpoints.add(a.endpoint)
+    })
+    return Object.values(buckets).sort((a, b) => a.ts - b.ts).map(b => ({
+      timeLabel: b.timeLabel,
+      ResponseTime: Math.round(b.totalMs / b.count),
+      Status: b.worstStatus,
+      Endpoint: Array.from(b.endpoints).slice(0, 2).join(', ') + (b.endpoints.size > 2 ? '...' : '') || 'API Call'
+    }))
   }, [apiLogs])
-
-  // Auto-scroll response time chart to the RIGHT so newest data is always visible
-  useEffect(() => {
-    if (rtScrollRef.current) {
-      rtScrollRef.current.scrollLeft = rtScrollRef.current.scrollWidth
-    }
-  }, [apiChartData])
 
   const activityChartData = useMemo(() => {
     if (apiLogs.length === 0) return []
@@ -450,12 +480,59 @@ export default function AdminDashboard() {
 
       <div className="header" style={{ margin: '1.5rem 0', paddingBottom: '1rem', borderBottom: '1px solid #2d2d2d', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.6rem', letterSpacing: '-0.03em' }}>🛠️ Admin Control Panel</h1>
-          <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>Real-time system health and user engagement intelligence</p>
+          <h1 style={{ margin: 0, fontSize: '1.6rem', letterSpacing: '-0.03em' }}>&#x1F6E0; Admin Control Panel</h1>
+          <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>
+            {currentTab === 'analytics'
+              ? analyticsMode === 'all'
+                ? `All-time overview · ${audits.length} total events`
+                : (selectedDate === todayStr ? 'Real-time system health' : `Viewing: ${new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`)
+              : 'System Administration'
+            }
+          </p>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={() => nav('/dashboard')} style={{ width: 'auto', borderRadius: '8px', padding: '0.5rem 1.25rem' }}>
-          ← Back to Dashboard
-        </button>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {currentTab === 'analytics' && (
+            <>
+              {/* Mode toggle */}
+              <div style={{ display: 'flex', background: '#0a0a0a', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+                {[['all', '📊 All Time'], ['date', '📅 By Date']].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setAnalyticsMode(mode)}
+                    style={{
+                      background: analyticsMode === mode ? '#34d399' : 'transparent',
+                      color: analyticsMode === mode ? '#000' : '#71717a',
+                      border: 'none', borderRadius: '6px',
+                      padding: '5px 12px', fontSize: '0.78rem',
+                      fontWeight: analyticsMode === mode ? '700' : '500',
+                      cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap'
+                    }}
+                  >{label}</button>
+                ))}
+              </div>
+              {analyticsMode === 'date' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                  <label style={{ fontSize: '0.7rem', color: '#52525b', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Viewing Date</label>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    max={todayStr}
+                    onChange={e => setSelectedDate(e.target.value)}
+                    style={{ background: '#161616', color: '#fff', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                  />
+                </div>
+              )}
+              {analyticsMode === 'date' && selectedDate !== todayStr && (
+                <button onClick={() => setSelectedDate(todayStr)} style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '8px', padding: '0.4rem 0.85rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  Today
+                </button>
+              )}
+            </>
+          )}
+          <button className="btn btn-outline btn-sm" onClick={() => nav('/dashboard')} style={{ width: 'auto', borderRadius: '8px', padding: '0.5rem 1.25rem' }}>
+            &#8592; Back to Dashboard
+          </button>
+        </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }} className="custom-scrollbar">
@@ -464,14 +541,13 @@ export default function AdminDashboard() {
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: '320px 1fr', 
-          gridTemplateRows: 'auto auto',
           gap: '1rem', 
-          alignItems: 'start', 
-          paddingBottom: '2rem' 
+          paddingBottom: '2rem',
+          alignItems: 'stretch'
         }}>
 
-          {/* ── LEFT PANEL ─────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {/* ── TOP LEFT: Stats + Endpoints ─────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', gridColumn: '1', gridRow: '1' }}>
 
             {/* Row 1: Lightning + Success Rate */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -598,7 +674,7 @@ export default function AdminDashboard() {
                   })}
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '300px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', maxHeight: '260px', overflowY: 'auto', paddingRight: '2px' }} className="custom-scrollbar">
                 {endpointData.length === 0 && <div style={{ color: '#52525b', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>No data yet — make some requests!</div>}
                 {endpointData.map((d, i) => {
                   const max = Math.max(...endpointData.map(x => x.count)) || 1
@@ -617,17 +693,18 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* ── BOTTOM LEFT: Pie Chart ────────────────────────────────────── */}
-          <div style={{ gridColumn: '1', gridRow: '2' }}>
+          {/* ── BOTTOM LEFT: Active Duration Pie Chart ─────────────────── */}
+          <div style={{ gridColumn: '1', gridRow: '2', display: 'flex', flexDirection: 'column' }}>
             {/* User Activity Time Pie Chart */}
             <div style={{ 
+              flex: 1,
               background: '#161616', 
               border: '1px solid #2d2d2d', 
               borderRadius: '8px', 
               padding: '1.25rem',
               display: 'flex',
               flexDirection: 'column',
-              height: '420px', 
+              minHeight: '300px',
               transition: 'all 0.3s ease'
             }}>
               <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600', marginBottom: '1rem' }}>Active Duration <span style={{ color: '#52525b', fontWeight: '400' }}>(min)</span></div>
@@ -681,9 +758,9 @@ export default function AdminDashboard() {
           </div>
 
           {/* ── TOP RIGHT: API Performance ───────────────────────────────── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', gridColumn: '2', gridRow: '1' }}>
-            {/* API Performance Block */}
-            <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gridColumn: '2', gridRow: '1', minWidth: 0 }}>
+            {/* API Performance Block — stretches to fill row height */}
+            <div style={{ flex: 1, background: '#161616', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               
               {/* Activity Chart */}
               <div>
@@ -743,9 +820,9 @@ export default function AdminDashboard() {
               {/* Response Time Chart */}
               <div>
                 <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '500', marginBottom: '0.5rem' }}>Response time</div>
-                <div ref={rtScrollRef} style={{ height: '140px', overflowX: 'auto', overflowY: 'hidden' }}>
-                  <div style={{ width: Math.max(apiChartData.length * 8, 300), height: '140px' }}>
-                    <BarChart width={Math.max(apiChartData.length * 8, 300)} height={140} data={apiChartData} margin={{ top: 0, right: 0, left: 10, bottom: 0 }} barCategoryGap={1}>
+                <div style={{ height: '140px', minWidth: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={apiChartData} margin={{ top: 0, right: 0, left: 10, bottom: 0 }} barCategoryGap={2}>
                       <YAxis stroke="#2d2d2d" tick={{ fill: '#fff', fontSize: 10 }} axisLine={false} tickLine={false} />
                       <RechartsTooltip content={({ active, payload }) => active && payload?.length ? (
                         <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.8rem', color: '#fff' }}>
@@ -757,7 +834,7 @@ export default function AdminDashboard() {
                       ) : null} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
                       <Bar dataKey="ResponseTime" fill="#3b82f6" radius={[2,2,0,0]} animationDuration={800} />
                     </BarChart>
-                  </div>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
@@ -786,108 +863,132 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* ── BOTTOM RIGHT: User Engagement ─────────────────────────────── */}
-            <div style={{ gridColumn: '2', gridRow: '2' }}>
-              {/* User Activity Section (Grouped Bar Chart) */}
-              <div style={{ 
+          {/* ── BOTTOM RIGHT: User Engagement + 14-day Trend ──────────────── */}
+          <div style={{ gridColumn: '2', gridRow: '2', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
+
+            {/* 14-day Activity Trend */}
+            <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', color: '#e5e7eb', fontWeight: '600' }}>14-Day Activity Trend</div>
+                  <div style={{ fontSize: '0.72rem', color: '#52525b', marginTop: '2px' }}>Uploads · Downloads · Auth events · Other</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '0.7rem' }}>
+                  {[['#34d399','Uploads'],['#3b82f6','Downloads'],['#facc15','Auth'],['#a855f7','Other']].map(([c,l]) => (
+                    <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#9ca3af' }}>
+                      <span style={{ width: '8px', height: '8px', background: c, borderRadius: '2px', display: 'inline-block' }} />{l}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ height: '120px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  {activityData.some(d => d.Uploads + d.Downloads + d.Auth + d.Other > 0) ? (
+                    <BarChart data={activityData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }} barGap={2}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e1e1e" vertical={false} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 10 }} allowDecimals={false} />
+                      <RechartsTooltip
+                        cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload?.length) return null
+                          return (
+                            <div style={{ background: '#1e1e1e', border: '1px solid #2d2d2d', padding: '8px 12px', borderRadius: '6px', fontSize: '0.78rem', color: '#fff' }}>
+                              <div style={{ color: '#9ca3af', marginBottom: '4px', fontWeight: 'bold' }}>{label}</div>
+                              {payload.map((p, i) => p.value > 0 && <div key={i} style={{ color: p.fill }}>{p.name}: {p.value}</div>)}
+                            </div>
+                          )
+                        }}
+                      />
+                      <Bar dataKey="Uploads" stackId="a" fill="#34d399" animationDuration={800} />
+                      <Bar dataKey="Downloads" stackId="a" fill="#3b82f6" animationDuration={800} />
+                      <Bar dataKey="Auth" stackId="a" fill="#facc15" animationDuration={800} />
+                      <Bar dataKey="Other" stackId="a" fill="#a855f7" radius={[2,2,0,0]} animationDuration={800} />
+                    </BarChart>
+                  ) : (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '0.8rem' }}>No events in the last 14 days</div>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* User Engagement (Grouped Bar Chart) */}
+            <div style={{ 
+                flex: 1,
                 background: '#161616', 
                 border: '1px solid #2d2d2d', 
                 borderRadius: '12px', 
                 padding: '1.5rem',
-                height: '420px', 
                 display: 'flex',
                 flexDirection: 'column',
-                transition: 'all 0.3s ease'
+                transition: 'all 0.3s ease',
+                minHeight: '220px'
               }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <div>
-                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', letterSpacing: '-0.02em' }}>User Engagement</h3>
-                  <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.8rem' }}>Per-user breakdown of API interaction vs File operations</p>
+                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1rem', letterSpacing: '-0.02em' }}>User Engagement</h3>
+                  <p style={{ margin: '3px 0 0', color: '#71717a', fontSize: '0.75rem' }}>
+                    {analyticsMode === 'all' ? 'All-time per-user breakdown' : `Breakdown for ${selectedDate}`}
+                  </p>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', background: '#0a0a0a', padding: '8px 16px', borderRadius: '8px', border: '1px solid #2d2d2d' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ width: '8px', height: '8px', background: '#34d399', borderRadius: '50%' }} />
-                    <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>API</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ width: '8px', height: '8px', background: '#3b82f6', borderRadius: '50%' }} />
-                    <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Uploads</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <div style={{ width: '8px', height: '8px', background: '#a855f7', borderRadius: '50%' }} />
-                    <span style={{ fontSize: '0.7rem', color: '#9ca3af' }}>Downloads</span>
-                  </div>
+                <div style={{ display: 'flex', gap: '1rem', background: '#0a0a0a', padding: '6px 12px', borderRadius: '8px', border: '1px solid #2d2d2d' }}>
+                  {[['#34d399','API'],['#3b82f6','Uploads'],['#a855f7','Downloads']].map(([c,l]) => (
+                    <div key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <div style={{ width: '7px', height: '7px', background: c, borderRadius: '50%' }} />
+                      <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>{l}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div style={{ flex: 1, width: '100%', minHeight: 0, overflowX: 'auto', overflowY: 'hidden' }} className="custom-scrollbar">
-                <div style={{ width: Math.max(userActivityData.length * 80, 400), height: '100%' }}>
-                  <ResponsiveContainer width="100%" height="100%">
+              <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
                   {userActivityData.length > 0 ? (
-                    <BarChart data={userActivityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barGap={4}>
+                    <BarChart data={userActivityData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }} barGap={4}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#2d2d2d" vertical={false} />
-                      <XAxis 
-                        dataKey="name" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fill: '#71717a', fontSize: 11, fontWeight: '500' }} 
-                        dy={10} 
-                      />
-                      <YAxis 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fill: '#71717a', fontSize: 11 }} 
-                      />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10 }} dy={8} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fill: '#71717a', fontSize: 10 }} />
                       <RechartsTooltip 
                         cursor={{ fill: 'rgba(255,255,255,0.03)' }}
                         content={({ active, payload, label }) => {
                           if (active && payload && payload.length) {
                             return (
-                              <div style={{ 
-                                background: '#1e1e1e', 
-                                border: '1px solid #3b82f6', 
-                                padding: '12px', 
-                                borderRadius: '8px', 
-                                boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' 
-                              }}>
-                                <p style={{ margin: '0 0 10px', fontWeight: '600', color: '#fff', fontSize: '0.9rem', borderBottom: '1px solid #2d2d2d', paddingBottom: '6px' }}>{label}</p>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '4px' }}>
-                                  <span style={{ color: '#34d399', fontSize: '0.8rem' }}>API Hits</span>
-                                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem' }}>{payload[0].value}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem', marginBottom: '4px' }}>
-                                  <span style={{ color: '#3b82f6', fontSize: '0.8rem' }}>Uploads</span>
-                                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem' }}>{payload[1].value}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '2rem' }}>
-                                  <span style={{ color: '#a855f7', fontSize: '0.8rem' }}>Downloads</span>
-                                  <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.8rem' }}>{payload[2].value}</span>
-                                </div>
+                              <div style={{ background: '#1e1e1e', border: '1px solid #3b82f6', padding: '10px', borderRadius: '8px', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
+                                <p style={{ margin: '0 0 8px', fontWeight: '600', color: '#fff', fontSize: '0.85rem', borderBottom: '1px solid #2d2d2d', paddingBottom: '5px' }}>{label}</p>
+                                {[['API Hits','#34d399',0],['Uploads','#3b82f6',1],['Downloads','#a855f7',2]].map(([name, color, idx]) => (
+                                  <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: '1.5rem', marginBottom: '3px' }}>
+                                    <span style={{ color, fontSize: '0.78rem' }}>{name}</span>
+                                    <span style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.78rem' }}>{payload[idx]?.value ?? 0}</span>
+                                  </div>
+                                ))}
                               </div>
                             )
                           }
                           return null
                         }}
                       />
-                      <Bar dataKey="api" fill="#34d399" radius={[4, 4, 0, 0]} barSize={20} animationDuration={1200} />
-                      <Bar dataKey="uploads" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} animationDuration={1200} />
-                      <Bar dataKey="downloads" fill="#a855f7" radius={[4, 4, 0, 0]} barSize={20} animationDuration={1200} />
+                      <Bar dataKey="api" fill="#34d399" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
+                      <Bar dataKey="uploads" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
+                      <Bar dataKey="downloads" fill="#a855f7" radius={[3, 3, 0, 0]} barSize={16} animationDuration={1200} />
                     </BarChart>
                   ) : (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', border: '1px dashed #2d2d2d', borderRadius: '12px' }}>
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#52525b', border: '1px dashed #2d2d2d', borderRadius: '8px' }}>
                       <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📊</div>
-                        <div style={{ fontSize: '0.9rem' }}>Waiting for user activity logs...</div>
+                        <div style={{ fontSize: '0.85rem' }}>
+                          {analyticsMode === 'date' ? `No activity on ${selectedDate}` : 'No user activity logged yet'}
+                        </div>
+                        {analyticsMode === 'date' && (
+                          <button onClick={() => setAnalyticsMode('all')} style={{ marginTop: '8px', background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', borderRadius: '6px', padding: '4px 12px', fontSize: '0.75rem', cursor: 'pointer' }}>Switch to All Time</button>
+                        )}
                       </div>
                     </div>
                   )}
                 </ResponsiveContainer>
               </div>
             </div>
-
           </div>
         </div>
-      </div>
     )}
 
       {/* ─── API Gateway Tab ──────────────────────────────────────────────────── */}
@@ -1088,51 +1189,104 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '12px', overflow: 'hidden' }}>
+          <div style={{ 
+            position: 'relative', 
+            borderRadius: '16px', 
+            overflow: 'hidden', 
+            height: '600px', 
+            display: 'flex', 
+            flexDirection: 'column' 
+          }}>
+            <GlassSurface width="100%" height="100%" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
+              <div style={{ width: '100%', height: '100%', boxSizing: 'border-box', overflowY: 'auto' }} className="custom-scrollbar">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid #2d2d2d', background: '#1c1c1c' }}>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Username</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Files Saved</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Total Req</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Uploads</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Downloads</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Allocated</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Storage Used</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Actions</th>
+                <tr style={{ 
+                  borderBottom: '1.5px solid rgba(255,255,255,1)', 
+                  background: 'rgba(255,255,255,0.05)',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 10
+                }}>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Username</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Files</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Requests</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Uploads</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Downloads</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quota</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Storage Usage</th>
+                  <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {usersList.map((user, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #262626', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = '#1c1c1c'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '1.2rem' }}>
-                      <div style={{ color: '#fff', fontWeight: '700', fontSize: '0.95rem' }}>{user.username}</div>
-                      <div style={{ color: '#52525b', fontSize: '0.75rem' }}>{user.email}</div>
+                      <div style={{ color: '#fff', fontWeight: '700', fontSize: '1rem' }}>{user.username}</div>
+                      <div style={{ color: '#a3a3a3', fontSize: '0.75rem' }}>{user.email}</div>
                     </td>
-                    <td style={{ padding: '1.2rem', color: '#3b82f6', fontWeight: '600' }}>{user.files_count}</td>
-                    <td style={{ padding: '1.2rem', color: '#fff' }}>{user.total_requests}</td>
-                    <td style={{ padding: '1.2rem', color: '#34d399' }}>{user.uploads}</td>
-                    <td style={{ padding: '1.2rem', color: '#a855f7' }}>{user.downloads}</td>
-                    <td style={{ padding: '1.2rem', color: '#71717a' }}>50.00 MB</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.files_count}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.total_requests}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.uploads}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.downloads}</td>
+                    <td style={{ padding: '1.2rem', color: '#a3a3a3', fontWeight: '600' }}>50.00 MB</td>
                     <td style={{ padding: '1.2rem' }}>
-                      <div style={{ color: '#fff', fontWeight: '600' }}>{(user.storage_used / (1024 * 1024)).toFixed(2)} MB</div>
-                      <div style={{ height: '4px', width: '60px', background: '#2d2d2d', borderRadius: '2px', marginTop: '6px' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, (user.storage_used / user.storage_limit) * 100)}%`, background: user.storage_used > user.storage_limit * 0.9 ? '#ef4444' : '#3b82f6', borderRadius: '2px' }} />
+                      <div style={{ color: '#fff', fontWeight: '700', marginBottom: '8px', fontSize: '0.9rem' }}>{(user.storage_used / (1024 * 1024)).toFixed(2)} MB</div>
+                      <div style={{ 
+                        height: '10px', 
+                        width: '100px', 
+                        background: '#000000', 
+                        borderRadius: '5px', 
+                        border: '0.6px solid #ffffff',
+                        overflow: 'hidden',
+                        position: 'relative'
+                      }}>
+                        <div style={{ 
+                          height: '100%', 
+                          width: `${Math.min(100, (user.storage_used / user.storage_limit) * 100)}%`, 
+                          background: '#ffffff',
+                          borderRadius: '0'
+                        }} />
                       </div>
                     </td>
                     <td style={{ padding: '1.2rem' }}>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button 
                           onClick={() => handleToggleBlock(user.id, user.is_blocked)}
-                          style={{ background: '#262626', border: '1px solid #3d3d3d', color: '#fff', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                          style={{ 
+                            background: 'rgba(255,255,255,0.05)', 
+                            backdropFilter: 'blur(10px)',
+                            border: '1px solid #ffffff', 
+                            color: '#fff', 
+                            padding: '8px 14px', 
+                            borderRadius: '8px', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                         >
-                          {user.is_blocked ? '🔓 Unblock' : '🚫 Block'}
+                          {user.is_blocked ? '🔓 UNBLOCK' : '🚫 BLOCK'}
                         </button>
                         <button 
                           onClick={() => handleDeleteUser(user.id)}
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '6px 10px', borderRadius: '6px', fontSize: '0.75rem', cursor: 'pointer' }}
+                          style={{ 
+                            background: 'rgba(239, 68, 68, 0.1)', 
+                            border: '1px solid #ef4444', 
+                            color: '#ef4444', 
+                            padding: '8px 14px', 
+                            borderRadius: '8px', 
+                            fontSize: '0.75rem', 
+                            fontWeight: '700',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
                         >
-                          🗑️ Delete
+                          🗑️ DELETE
                         </button>
                       </div>
                     </td>
@@ -1140,40 +1294,120 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
-            {usersList.length === 0 && !userLoading && (
-              <div style={{ padding: '5rem', textAlign: 'center', color: '#71717a' }}>No data available. Refresh to try again.</div>
-            )}
+          </div>
+            </GlassSurface>
           </div>
         </div>
       )}
       {/* ─── Audit Logs Tab ─────────────────────────────────────────────────── */}
       {currentTab === 'audits' && (
         <div style={{ marginTop: '0.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          {/* ── Toolbar ── */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '12px' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#fff' }}>Audit Trail</h2>
               <p style={{ margin: '4px 0 0', color: '#71717a', fontSize: '0.85rem' }}>Immutable record of all system operations and security events</p>
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
+
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+
+              {/* Mode toggle pill */}
+              <div style={{ display: 'flex', background: '#0a0a0a', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '3px', gap: '2px' }}>
+                {[['all', '📋 All Logs'], ['date', '📅 By Date']].map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setAuditDateMode(mode)}
+                    style={{
+                      background: auditDateMode === mode ? '#34d399' : 'transparent',
+                      color: auditDateMode === mode ? '#000' : '#71717a',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '6px 14px',
+                      fontSize: '0.8rem',
+                      fontWeight: auditDateMode === mode ? '700' : '500',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Date picker — visible only in 'date' mode */}
+              {auditDateMode === 'date' && (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+                  <label style={{ fontSize: '0.65rem', color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select Date</label>
+                  <input
+                    type="date"
+                    value={auditDate}
+                    max={new Date().toISOString().split('T')[0]}
+                    onChange={e => setAuditDate(e.target.value)}
+                    style={{ background: '#161616', color: '#fff', border: '1px solid #2d2d2d', borderRadius: '8px', padding: '0.4rem 0.75rem', fontSize: '0.85rem', cursor: 'pointer', outline: 'none' }}
+                  />
+                </div>
+              )}
+
               <button className="btn btn-outline btn-sm" onClick={() => window.location.reload()} style={{ borderRadius: '8px' }}>
-                🔄 Refresh Logs
+                &#x1F504; Refresh
               </button>
             </div>
           </div>
 
-          <div style={{ background: '#161616', border: '1px solid #2d2d2d', borderRadius: '12px', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #2d2d2d', background: '#1c1c1c' }}>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', width: '200px' }}>Timestamp</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', width: '150px' }}>User</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', width: '150px' }}>Action</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase', width: '120px' }}>Status</th>
-                  <th style={{ padding: '1.2rem', color: '#9ca3af', fontSize: '0.75rem', fontWeight: '700', textTransform: 'uppercase' }}>Details / Context</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audits.map((log, idx) => {
+          {/* Live count badge */}
+          {(() => {
+            const filteredAuditLogs = auditDateMode === 'date'
+              ? audits.filter(a => a.timestamp && new Date(a.timestamp).toISOString().split('T')[0] === auditDate)
+              : audits
+            const showEmpty = filteredAuditLogs.length === 0
+            return (
+              <>
+                <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#52525b' }}>
+                    {auditDateMode === 'date'
+                      ? `Showing logs for ${new Date(auditDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`
+                      : 'Showing all audit logs'}
+                  </span>
+                  <span style={{ background: '#27272a', color: '#a1a1aa', fontSize: '0.72rem', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', border: '1px solid #3d3d3d' }}>
+                    {filteredAuditLogs.length} records
+                  </span>
+                </div>
+
+                <div style={{ 
+                  position: 'relative', 
+                  borderRadius: '16px', 
+                  overflow: 'hidden', 
+                  height: '600px', // Fixed height to prevent SVG filter bloat
+                  display: 'flex',
+                  flexDirection: 'column'
+                }}>
+                  <GlassSurface width="100%" height="100%" borderRadius={16} blur={20} opacity={0.03} brightness={110}>
+                    <div style={{ 
+                      width: '100%', 
+                      height: '100%',
+                      boxSizing: 'border-box', 
+                      overflowY: 'auto', // Internal scrolling
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }} className="custom-scrollbar">
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ 
+                            borderBottom: '1.5px solid #ffffff', 
+                            background: 'rgba(255,255,255,0.05)',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 10
+                          }}>
+                            <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', width: '200px', letterSpacing: '0.05em' }}>Timestamp</th>
+                            <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', width: '150px', letterSpacing: '0.05em' }}>User</th>
+                            <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', width: '150px', letterSpacing: '0.05em' }}>Action</th>
+                            <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', width: '120px', letterSpacing: '0.05em' }}>Status</th>
+                            <th style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Context</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                    {filteredAuditLogs.map((log, idx) => {
                   let displayAction = log.action;
                   let context = "-";
                   let statusColor = "#34d399";
@@ -1218,62 +1452,67 @@ export default function AdminDashboard() {
                     // 3. Robust Status Color Logic
                     const sCode = d.status || log.status;
                     if (sCode === "FAILURE" || (typeof sCode === 'number' && sCode >= 400)) {
-                      statusColor = "#f87171";
-                      statusBg = "rgba(239, 68, 68, 0.1)";
+                      statusColor = "#ffffff";
+                      statusBg = "rgba(239, 68, 68, 0.3)";
                       displayStatus = sCode === "FAILURE" ? "FAILURE" : `ERROR ${sCode}`;
                     } else if (typeof sCode === 'number' && sCode < 400) {
+                      statusColor = "#ffffff";
+                      statusBg = "rgba(255, 255, 255, 0.1)";
                       displayStatus = `OK ${sCode}`;
+                    } else {
+                      statusColor = "#ffffff";
+                      statusBg = "rgba(255, 255, 255, 0.1)";
                     }
                   } catch(e) {}
 
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid #262626', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = '#1c1c1c'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                      <td style={{ padding: '1rem 1.2rem', color: '#a1a1aa', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                    <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '1.2rem', color: '#a3a3a3', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                         {new Date(log.timestamp).toLocaleString()}
                       </td>
-                      <td style={{ padding: '1rem 1.2rem' }}>
-                        <div style={{ color: '#fff', fontWeight: '600', fontSize: '0.9rem' }}>{log.username}</div>
+                      <td style={{ padding: '1.2rem' }}>
+                        <div style={{ color: '#fff', fontWeight: '700', fontSize: '0.9rem' }}>{log.username}</div>
                       </td>
-                      <td style={{ padding: '1rem 1.2rem' }}>
+                      <td style={{ padding: '1.2rem' }}>
                         <span style={{ 
-                          padding: '4px 8px', 
-                          background: '#2d2d2d', 
-                          borderRadius: '4px', 
+                          padding: '4px 10px', 
+                          background: 'rgba(255,255,255,0.05)', 
+                          borderRadius: '6px', 
                           fontSize: '0.7rem', 
-                          fontWeight: '700', 
-                          color: '#d1d5db',
-                          border: '1px solid #3d3d3d'
+                          fontWeight: '800', 
+                          color: '#ffffff',
+                          border: '0.6px solid #ffffff'
                         }}>
                           {displayAction}
                         </span>
                       </td>
-                      <td style={{ padding: '1rem 1.2rem' }}>
+                      <td style={{ padding: '1.2rem' }}>
                         <span style={{ 
                           padding: '4px 10px', 
                           borderRadius: '6px', 
                           fontSize: '0.7rem', 
-                          fontWeight: '700',
+                          fontWeight: '800',
                           background: statusBg,
                           color: statusColor,
-                          border: `1px solid ${statusColor}33`
+                          border: statusBg.includes('239') ? '1px solid #ef4444' : '1px solid #ffffff'
                         }}>
                           {displayStatus}
                         </span>
                       </td>
-                      <td style={{ padding: '1rem 1.2rem', color: '#d4d4d8', fontSize: '0.85rem' }}>
+                      <td style={{ padding: '1.2rem', color: '#ffffff', fontSize: '0.85rem', fontWeight: '500' }}>
                         {context}
                       </td>
                     </tr>
                   )
-                })}
-              </tbody>
-            </table>
-            {audits.length === 0 && (
-              <div style={{ padding: '5rem', textAlign: 'center', color: '#71717a' }}>
-                No audit logs found. Actions will appear here as they occur.
-              </div>
-            )}
-          </div>
+                    })}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassSurface>
+            </div>
+              </>
+            )
+          })()}
         </div>
       )}
       </div>
