@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Header
+from pydantic import BaseModel
 import requests
-from services.supabase_service import db_get_all, USERS_TABLE, AUDIT_TABLE, SUPABASE_URL, HEADS, TIMEOUT
+from services.supabase_service import db_get_all, db_get_all_paginated, USERS_TABLE, AUDIT_TABLE, SUPABASE_URL, HEADS, TIMEOUT
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -22,22 +23,40 @@ def get_analytics(authorization: str = Header(default="")):
     try:
         users = db_get_all(USERS_TABLE)
         total_storage = sum([u.get("storage_used", 0) or 0 for u in users])
-        
-        # Use Supabase count=exact to get total audit event count efficiently
+
+        # Separate clean headers for count=exact (avoids conflict with return=representation)
         count_headers = {
-            **HEADS,
+            "apikey": HEADS["apikey"],
+            "Authorization": HEADS["Authorization"],
             "Prefer": "count=exact",
             "Range-Unit": "items",
             "Range": "0-0"
         }
-        count_r = requests.get(f"{SUPABASE_URL}/rest/v1/audit_logs", headers=count_headers, timeout=TIMEOUT)
         total_audit = 0
-        if count_r.ok:
-            content_range = count_r.headers.get("Content-Range", "0/0")
-            total_audit = int(content_range.split("/")[-1]) if "/" in content_range else 0
-        
+        try:
+            count_r = requests.get(
+                f"{SUPABASE_URL}/rest/v1/audit_logs",
+                headers=count_headers,
+                timeout=TIMEOUT
+            )
+            if count_r.ok:
+                content_range = count_r.headers.get("Content-Range", "")
+                if "/" in content_range:
+                    total_audit = int(content_range.split("/")[-1])
+        except Exception:
+            pass  # Non-critical: just return 0 if count fails
+
+        # Also get auth user count (more accurate than local users table)
+        total_auth_users = len(users)
+        try:
+            auth_r = requests.get(f"{SUPABASE_URL}/auth/v1/admin/users", headers=HEADS, timeout=TIMEOUT)
+            if auth_r.status_code == 200:
+                total_auth_users = len(auth_r.json().get("users", []))
+        except Exception:
+            pass
+
         return {
-            "total_users": len(users),
+            "total_users": total_auth_users,
             "total_storage_bytes": total_storage,
             "total_audit_events": total_audit
         }
@@ -63,8 +82,8 @@ def get_users(authorization: str = Header(default="")):
         db_users = db_get_all(USERS_TABLE) or []
         db_map = { u.get("gmail") or u.get("email"): u for u in db_users }
 
-        # 3. Fetch activity counts
-        audits = db_get_all(AUDIT_TABLE, limit=3000) or []
+        # 3. Fetch activity counts — paginated, exclude API_REQUEST noise, newest first
+        audits = db_get_all_paginated(AUDIT_TABLE, order="timestamp.desc", filters="action=neq.API_REQUEST") or []
         user_stats = {}
         for a in audits:
             raw = a.get("username")
@@ -100,8 +119,8 @@ def get_users(authorization: str = Header(default="")):
             real_storage = 0
             real_files_count = 0
             try:
-                # Bucket name is the username, folder is 'main'
-                files = storage_list(official_uname, folder="main")
+                # Bucket name is ALWAYS lowercase (matches upload path in files.py: bucket = username.lower())
+                files = storage_list(official_uname.lower(), folder="main")
                 if isinstance(files, list):
                     for f in files:
                         # Skip folders if any
@@ -226,18 +245,31 @@ def delete_user(user_id: str, authorization: str = Header(default="")):
 @router.post("/users/{user_id}/toggle-block")
 def toggle_user_block(user_id: str, block: bool, authorization: str = Header(default="")):
     check_admin(authorization)
-    # Update Supabase Auth user metadata or ban status
     url = f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}"
-    data = {"ban_duration": "none" if not block else "876000h"} # 100 years
+    data = {"ban_duration": "none" if not block else "876000h"}
     r = requests.put(url, headers=HEADS, json=data, timeout=TIMEOUT)
     return {"status": "success", "blocked": block}
+
+class BlockRequest(BaseModel):
+    block: bool
+
+@router.post("/users/{user_id}/block")
+def block_user(user_id: str, body: BlockRequest, authorization: str = Header(default="")):
+    check_admin(authorization)
+    url = f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}"
+    data = {"ban_duration": "none" if not body.block else "876000h"}
+    r = requests.put(url, headers=HEADS, json=data, timeout=TIMEOUT)
+    if not r.ok:
+        raise HTTPException(r.status_code, f"Supabase error: {r.text}")
+    return {"status": "success", "blocked": body.block}
 
 @router.get("/audits")
 def get_audits(authorization: str = Header(default="")):
     check_admin(authorization)
     try:
-        # Fetch all audit logs ordered oldest first so charts display the full timeline
-        audits = db_get_all(AUDIT_TABLE, order="timestamp.asc", limit=5000)
+        # Paginated fetch — newest first for the audit trail display
+        # Frontend sorts chronologically for charts
+        audits = db_get_all_paginated(AUDIT_TABLE, order="timestamp.desc")
         return audits
     except Exception as e:
         return []

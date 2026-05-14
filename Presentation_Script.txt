@@ -1,0 +1,53 @@
+# Presentation Script: SecureVault
+
+## Step 1: Introduction & Project Overview
+"Hello Sir/Madam. Today, I'll be presenting my project, SecureVault. It is an end-to-end Encrypted Document Management System. The primary goal of this project is to provide a highly secure environment where users (like doctors, patients, or businesses) can upload, store, and share sensitive documents without worrying about data breaches.
+
+Our tech stack uses React and Vite for a modern, responsive frontend, and a Python FastAPI backend for high performance. For database and storage, we are leveraging Supabase."
+
+## Step 2: The Core Uniqueness – Zero-Knowledge Encryption Flow
+"What makes SecureVault truly unique is our Zero-Knowledge Architecture. Let me explain how our encryption works, specifically how the key is generated, used, and completely deleted.
+
+Unlike traditional systems where the server stores your encryption keys in a database, our system *never* stores the actual key. When a user uploads a file, they provide a personal file password. Her
+By using that, what it does is,
+1. Dynamic Key Generation: The server takes the user's password, combines it with a random 16-byte 'salt', and adds a highly secure 'Server Secret' (also known as a pepper). Using an advanced cryptographic function called PBKDF2HMAC (Password-Based Key Derivation Function 2 with Hash-based Message Authentication Code) running through 390,000 iterations, it derives a secure 32-byte AES-256 key.
+2. Encryption: The file is then encrypted using AES-256-CBC. We attach the random 'salt' and an 'initialization vector (IV)' to the encrypted file itself, but *never* the password or the AES key.
+3. Key Deletion: The moment the encryption is complete and the file is puhed to the Supabase storage bucket, the AES key and the user's password are completely wiped from the server's memory. 
+
+If a hacker breaches our database, they get absolutely nothing but scrambled data because the keys simply do not exist anywhere on the server."
+
+## Step 3: Uniqueness – Post-Encryption Email Automation
+"Because we don't store the passwords, if a user forgets their file password, the file is lost forever. To solve this, we implemented a unique Post-Encryption Email System.
+
+The moment the server finishes encrypting the file and deleting the key from memory, an asynchronous background task is triggered. The backend automatically drafts a secure email and sends it directly to the user's registered email address. 
+
+This email serves as an automated digital receipt. It contains the exact filename and securely reminds them of the password they just used to encrypt it, along with a strict security warning to keep it safe. This ensures users have a reliable backup of their keys without compromising our Zero-Knowledge server infrastructure."
+
+## Step 4: Advanced Analytics & Auditing
+"Finally, to make this an enterprise-ready application, I developed a comprehensive Analytics and Audit Dashboard for administrators.
+
+Every single action taken inside SecureVault is tracked and fed into our analytics engine:
+* Storage Analytics: We monitor byte-level storage consumption across the platform. The admin dashboard calculates exactly how much storage each user is consuming and dynamically charts it.
+* Granular Audit Trails: Whenever a user uploads or attempts to decrypt a file, we log the exact event into an AUDIT_TABLE. But we don't just log the action—we log the IP address, the device/browser (User-Agent) they used, and the exact process time (in milliseconds) it took our server to encrypt or decrypt that file.
+* Security Monitoring: If someone enters the wrong password during decryption, the system logs a 'FAILURE' event. Admins can view these analytics in real-time charts on the dashboard to spot potential malicious activity or brute-force attempts on a user's file.
+
+## Conclusion
+"To summarize, SecureVault isn't just a basic cloud storage app. By combining Zero-Knowledge AES-256 encryption, memory-wiped dynamic key generation, automated email backups, and granular security analytics, it provides a truly secure, enterprise-grade data management solution. 
+
+Thank you, I would be happy to show a live demo or answer any questions."
+
+***
+
+Tips for your presentation:
+* Pacing: When talking about the "Key Deletion" (Step 2), pause for a second. Emphasize the words "completely wiped from memory"—this is the strongest technical point of your project.
+* Demonstration: If you are giving a live demo, upload a file, enter a password, and then immediately open your email inbox to show the guide the automated email arriving in real-time. This always leaves a great impression!
+
+
+
+
+------ENCRYPTION-------
+"Sir/Madam, if you look at the encrypt_file function, you can see our Zero-Knowledge architecture in action. First, we generate a random 16-byte salt. Then, the derive_key function takes the user's password, the salt, and a hardcoded SERVER_SECRET (called a pepper) to generate a secure 32-byte AES key. We encrypt the file data using this AES key with CBC mode. Finally, the function returns only the salt, iv, and the scrambled data. Notice how the actual key is never saved to a database or returned anywhere. The moment this Python function finishes executing, the key is destroyed from the RAM. That is how we ensure true Zero-Knowledge."
+
+
+------EMAIL------
+"For the email system, I used Python's built-in smtplib. The send_encryption_key_email function takes the user's email, the filename, and the password they just typed in. It dynamically generates a professional HTML email warning them to keep the password safe. It then connects to a Gmail SMTP server using TLS encryption and securely fires off the email. Because sending an email can take a couple of seconds, I attached this function to FastAPI's BackgroundTasks. This means the user's file finishes uploading instantly on the frontend, while the email is sent silently in the background."

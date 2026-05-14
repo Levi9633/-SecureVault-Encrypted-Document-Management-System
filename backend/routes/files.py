@@ -63,29 +63,34 @@ async def upload_file(
     except Exception as e:
         raise HTTPException(503, f"Upload failed: {e}")
 
-    # Track storage and log audit
+    file_size = len(encrypted)
+    client_host = request.client.host if request.client else "Unknown"
+    user_agent = request.headers.get("user-agent", "Unknown")
+    process_time_ms = int((time.time() - start_time) * 1000)
+
+    # ── 1. Update storage usage in DB (best-effort, don't block audit log) ──
     try:
-        file_size = len(encrypted)
         user_rows = await asyncio.to_thread(db_select, USERS_TABLE, "user_id", username)
         if user_rows:
             current_storage = user_rows[0].get("storage_used", 0) or 0
             new_storage = current_storage + file_size
             await asyncio.to_thread(db_update, USERS_TABLE, "user_id", username, {"storage_used": new_storage})
-            
-        client_host = request.client.host if request.client else "Unknown"
-        user_agent = request.headers.get("user-agent", "Unknown")
-        process_time_ms = int((time.time() - start_time) * 1000)
+    except Exception as e:
+        print(f"[STORAGE TRACKING FAILED] {e}")
+
+    # ── 2. Always write audit log — independent of DB update ──
+    try:
         await asyncio.to_thread(
             log_audit_event,
-            username, 
-            "FILE_ENCRYPT_UPLOAD", 
+            username,
+            "FILE_ENCRYPT_UPLOAD",
             None,
             "SUCCESS",
             {"file_name": file.filename, "file_size_bytes": file_size, "encryption": "AES-256-GCM"},
             {"ip_address": client_host, "device": user_agent, "ms": process_time_ms}
         )
     except Exception as e:
-        print(f"[METADATA TRACKING FAILED] {e}")
+        print(f"[AUDIT LOG FAILED - UPLOAD] {e}")
 
     # Send email notification asynchronously
     if user_email:

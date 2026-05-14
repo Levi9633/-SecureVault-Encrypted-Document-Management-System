@@ -50,6 +50,35 @@ def db_get_all(table: str, order: str = None, limit: int = 500, filters: str = N
     r.raise_for_status()
     return r.json()
 
+def db_get_all_paginated(table: str, order: str = "timestamp.desc", filters: str = None, page_size: int = 1000, max_records: int = 10000):
+    """Fetch all rows using Supabase Range-based pagination to bypass the 1000-row server cap."""
+    all_rows = []
+    start = 0
+    while len(all_rows) < max_records:
+        end = start + page_size - 1
+        params = f"?order={order}"
+        if filters:
+            params += f"&{filters}"
+        headers = {
+            **{k: v for k, v in session.headers.items()},
+            "Range-Unit": "items",
+            "Range": f"{start}-{end}",
+            "Prefer": "count=exact"
+        }
+        r = session.get(f"{BASE}/{table}{params}", headers=headers, timeout=TIMEOUT)
+        if r.status_code in (404, 400, 416):  # 416 = Range Not Satisfiable (past end)
+            break
+        if not r.ok:
+            break
+        batch = r.json()
+        if not batch:
+            break
+        all_rows.extend(batch)
+        if len(batch) < page_size:
+            break  # Last page reached
+        start += page_size
+    return all_rows
+
 def db_insert(table: str, data: dict):
     r = session.post(f"{BASE}/{table}", json=data, timeout=TIMEOUT)
     r.raise_for_status()

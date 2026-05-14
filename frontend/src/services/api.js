@@ -124,5 +124,7 @@ export const getAnalytics = () => API.get('/admin/analytics')
 export const getUsers = () => API.get('/admin/users')
 export const getAudits = () => API.get('/admin/audits')
 export const getSupabaseAudits = () => API.get('/admin/supabase-audits')
+export const blockUser = (userId, block) => API.post(`/admin/users/${userId}/block`, { block })
+export const deleteUser = (userId) => API.delete(`/admin/users/${userId}`)
 
 export default API

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import api, { getAnalytics, getUsers, getAudits, getSupabaseAudits } from '../services/api'
+import api, { getAnalytics, getUsers, getAudits, getSupabaseAudits, blockUser, deleteUser } from '../services/api'
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
@@ -58,6 +58,39 @@ export default function AdminDashboard() {
   const [auditCalDate, setAuditCalDate] = useState(new Date())
   const auditCalendarRef = useRef(null)
 
+  // ─── Confirm Modal + Toast ────────────────────────────────────────────────────
+  const [confirmModal, setConfirmModal] = useState(null) // { type: 'block'|'unblock'|'delete', user }
+  const [toast, setToast] = useState(null) // { message, variant: 'success'|'error' }
+
+  const showToast = (message, variant = 'success') => {
+    setToast({ message, variant })
+    setTimeout(() => setToast(null), 3200)
+  }
+
+  const handleConfirm = async () => {
+    if (!confirmModal) return
+    const { type, user } = confirmModal
+    setConfirmModal(null)
+    try {
+      if (type === 'delete') {
+        await deleteUser(user.id)
+        showToast(`Deleted ${user.username} successfully`)
+        // ── Optimistic: remove user from list instantly ──
+        setUsers(prev => prev.filter(u => u.id !== user.id))
+      } else {
+        const blocking = type === 'block'
+        await blockUser(user.id, blocking)
+        showToast(`${blocking ? 'Blocked' : 'Unblocked'} ${user.username} successfully`)
+        // ── Optimistic: flip is_blocked instantly so button swaps BLOCK ↔ UNBLOCK ──
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_blocked: blocking } : u))
+      }
+      fetchData() // background sync — keeps server state in sync
+    } catch (err) {
+      showToast(err.response?.data?.detail || 'Action failed', 'error')
+      fetchData() // re-sync on error to restore correct state
+    }
+  }
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (calendarRef.current && !calendarRef.current.contains(event.target)) {
@@ -94,12 +127,6 @@ export default function AdminDashboard() {
       
       const localAudits = aRes.data || []
       const sbAuditsRaw = sbRes.data || []
-      
-      // Debug: log what we have
-      const apiReqCount = localAudits.filter(a => a.action === 'API_REQUEST').length
-      const otherCount = localAudits.filter(a => a.action !== 'API_REQUEST').length
-      console.log(`[Admin] Total local audits: ${localAudits.length} | API_REQUEST: ${apiReqCount} | Other events: ${otherCount}`)
-      console.log('[Admin] Sample:', localAudits[0])
 
       const sbAuditsFormatted = sbAuditsRaw.map(a => ({
         username: a.payload?.actor_username || a.payload?.actor_email || 'System',
@@ -108,7 +135,8 @@ export default function AdminDashboard() {
         timestamp: a.created_at
       }))
 
-      const combined = [...localAudits, ...sbAuditsFormatted].sort((a, b) => 
+      // Sort ascending for charts (chronological order)
+      const combined = [...localAudits, ...sbAuditsFormatted].sort((a, b) =>
         new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
       )
 
@@ -150,22 +178,23 @@ export default function AdminDashboard() {
     for (let i = 13; i >= 0; i--) {
       const d = new Date()
       d.setDate(d.getDate() - i)
-      const key = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-      counts[key] = { name: key, Uploads: 0, Downloads: 0, Auth: 0, Other: 0 }
+      const key = d.toISOString().split('T')[0] // Use ISO date (UTC) as bucket key
+      const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      counts[key] = { name: label, Uploads: 0, Downloads: 0, Auth: 0, Other: 0 }
     }
     audits.forEach(a => {
       if (!a.timestamp || a.action === 'API_REQUEST') return
-      const key = new Date(a.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+      const key = new Date(a.timestamp).toISOString().split('T')[0] // Match on UTC date
       if (counts[key]) {
         const action = a.action?.toLowerCase() || ''
-        // Match FILE_ENCRYPT_UPLOAD, upload, encrypt
-        if (action.includes('upload') || action.includes('encrypt'))
+        // FILE_ENCRYPT_UPLOAD, upload, encrypt
+        if (action.includes('upload') || (action.includes('encrypt') && !action.includes('decrypt')))
           counts[key].Uploads++
-        // Match FILE_DECRYPT, download, decrypt
-        else if (action.includes('download') || action.includes('decrypt'))
+        // FILE_DECRYPT, download, decrypt
+        else if (action.includes('decrypt') || action.includes('download'))
           counts[key].Downloads++
-        // Auth events
-        else if (action.includes('auth') || action.includes('login') || action.includes('signup'))
+        // Auth events from Supabase (action starts with 'auth:')
+        else if (action.startsWith('auth:') || action.includes('login') || action.includes('signup') || action.includes('logout'))
           counts[key].Auth++
         else
           counts[key].Other++
@@ -189,14 +218,17 @@ export default function AdminDashboard() {
   }, [audits])
 
   const eventCompositionData = useMemo(() => {
-    const counts = { Uploads: 0, Downloads: 0, Auth: 0, Other: 0 }
+    const counts = { Uploads: 0, Downloads: 0, Auth: 0 }
     audits.forEach(a => {
       if (a.action === 'API_REQUEST') return
       const action = a.action?.toLowerCase() || ''
-      if (action.includes('upload')) counts.Uploads++
-      else if (action.includes('download')) counts.Downloads++
-      else if (action.includes('auth') || action.includes('login') || action.includes('signup')) counts.Auth++
-      else counts.Other++
+      if (action.includes('upload') || (action.includes('encrypt') && !action.includes('decrypt')))
+        counts.Uploads++
+      else if (action.includes('decrypt') || action.includes('download'))
+        counts.Downloads++
+      else if (action.startsWith('auth:') || action.includes('login') || action.includes('signup') || action.includes('logout'))
+        counts.Auth++
+      // Everything else is ignored — no "Other" bucket
     })
     return Object.keys(counts).filter(k => counts[k] > 0).map(k => ({ name: k, value: counts[k] }))
   }, [audits])
@@ -297,48 +329,10 @@ export default function AdminDashboard() {
     }).filter(a => a.endpoint)
   }, [filteredAudits])
 
-  const [usersList, setUsersList] = useState([])
-  const [userLoading, setUserLoading] = useState(false)
+  // Duplicate usersList state removed — UI now uses global 'users' state
 
-  const fetchUsers = async () => {
-    setUserLoading(true)
-    try {
-      const res = await api.get('/admin/users')
-      console.log('[Admin] Users List fetched:', res.data)
-      setUsersList(res.data)
-    } catch (e) {
-      console.error('Failed to fetch users:', e)
-    } finally {
-      setUserLoading(false)
-    }
-  }
 
-  useEffect(() => {
-    if (currentTab === 'users') fetchUsers()
-  }, [currentTab])
-
-  const handleDeleteUser = async (uid) => {
-    if (!uid) return alert('Invalid User ID')
-    if (!window.confirm('Are you sure you want to PERMANENTLY delete this user? This cannot be undone.')) return
-    try {
-      await api.delete(`/admin/users/${uid}`)
-      fetchUsers()
-    } catch (e) {
-      alert('Delete failed: ' + (e.response?.data?.detail || e.message))
-    }
-  }
-
-  const handleToggleBlock = async (uid, currentStatus) => {
-    if (!uid) return alert('Invalid User ID')
-    const action = currentStatus ? 'unblock' : 'block'
-    if (!window.confirm(`Are you sure you want to ${action} this user?`)) return
-    try {
-      await api.post(`/admin/users/${uid}/toggle-block?block=${!currentStatus}`)
-      fetchUsers()
-    } catch (e) {
-      alert('Action failed: ' + (e.response?.data?.detail || e.message))
-    }
-  }
+  // Deprecated handlers removed — using handleConfirm logic instead
 
   const apiStats = useMemo(() => {
     if (apiLogs.length === 0) return { req: 0, successRate: '0.0', lq: 0, median: 0, uq: 0 }
@@ -491,6 +485,7 @@ export default function AdminDashboard() {
   }
 
   return (
+    <>
     <div className="page" style={{ 
       maxWidth: '1400px', 
       margin: '0 auto', 
@@ -549,8 +544,8 @@ export default function AdminDashboard() {
 
           {currentTab === 'users' && (
             <button 
-              onClick={fetchUsers} 
-              disabled={userLoading}
+              onClick={fetchData} 
+              disabled={loading}
               style={{ 
                 width: 'auto', 
                 borderRadius: '8px', 
@@ -567,17 +562,17 @@ export default function AdminDashboard() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                opacity: userLoading ? 0.6 : 1
+                opacity: loading ? 0.6 : 1
               }}
-              onMouseOver={(e) => { if(!userLoading) { e.target.style.background = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' } }}
-              onMouseOut={(e) => { if(!userLoading) { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.boxShadow = 'none' } }}
+              onMouseOver={(e) => { if(!loading) { e.target.style.background = 'rgba(255,255,255,0.12)'; e.target.style.boxShadow = '0 0 20px rgba(255,255,255,0.1)' } }}
+              onMouseOut={(e) => { if(!loading) { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.boxShadow = 'none' } }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: userLoading ? 'spin 1s linear infinite' : 'none' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }}>
                 <path d="M23 4v6h-6"></path>
                 <path d="M1 20v-6h6"></path>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
               </svg>
-              {userLoading ? 'Refreshing...' : 'Refresh Data'}
+              {loading ? 'Refreshing...' : 'Refresh Data'}
               <style>{`
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
               `}</style>
@@ -952,7 +947,7 @@ export default function AdminDashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   {eventCompositionData.length > 0 ? (() => {
                     const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
-                    const PIE_COLORS = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.6)', Auth: 'rgba(255,255,255,0.35)', Other: 'rgba(255,255,255,0.18)' }
+                    const PIE_COLORS = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.6)', Auth: 'rgba(255,255,255,0.25)' }
                     return (
                       <PieChart>
                         <Pie
@@ -989,7 +984,7 @@ export default function AdminDashboard() {
                             const entry = payload[0]
                             const total = eventCompositionData.reduce((s, d) => s + d.value, 0)
                             const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : 0
-                            const color = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.7)', Auth: 'rgba(255,255,255,0.45)', Other: 'rgba(255,255,255,0.2)' }[entry.name] || '#fff'
+                            const color = { Uploads: '#ffffff', Downloads: 'rgba(255,255,255,0.7)', Auth: 'rgba(255,255,255,0.45)' }[entry.name] || '#fff'
                             return (
                               <div style={{ background: 'rgba(15,15,15,0.9)', backdropFilter: 'blur(8px)', border: `1px solid rgba(255,255,255,0.2)`, padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', color: '#fff', boxShadow: '0 10px 20px rgba(0,0,0,0.5)' }}>
                                 <div style={{ color, fontWeight: '800', marginBottom: '6px', fontSize: '0.9rem' }}>{entry.name}</div>
@@ -1178,7 +1173,7 @@ export default function AdminDashboard() {
           <div style={{ gridColumn: '2', gridRow: '2', display: 'flex', flexDirection: 'column', gap: '1rem', minWidth: 0 }}>
 
             {/* 14-day Activity Trend */}
-            <div className="glass-card" style={{ background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
+            <div className="glass-card" style={{ position: 'relative', zIndex: 10, background: 'rgba(255,255,255,0.04)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', border: '0.6px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                 <div>
                   <div style={{ fontSize: '1.25rem', color: '#ffffff', fontWeight: '900', letterSpacing: '-0.03em' }}>14-Day Activity Trend</div>
@@ -1206,6 +1201,7 @@ export default function AdminDashboard() {
                       <YAxis axisLine={false} tickLine={false} tick={{ fill: '#ffffff', fontSize: 10, fontWeight: '800' }} allowDecimals={false} />
                       <RechartsTooltip
                         cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                        wrapperStyle={{ zIndex: 9999 }}
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null
                           const total = payload.reduce((s, p) => s + (p.value || 0), 0)
@@ -1240,9 +1236,9 @@ export default function AdminDashboard() {
                         }}
                       />
                       <Bar dataKey="Uploads" fill="#ffffff" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Downloads" fill="#d4d4d8" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Auth" fill="#71717a" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
-                      <Bar dataKey="Other" fill="#3f3f46" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Downloads" fill="rgba(255,255,255,0.45)" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Auth" fill="rgba(255,255,255,0.2)" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
+                      <Bar dataKey="Other" fill="rgba(255,255,255,0.08)" radius={[2,2,0,0]} maxBarSize={18} animationDuration={900} />
                     </BarChart>
                   ) : (
                     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', opacity: 0.4, fontSize: '0.8rem' }}>No events in the last 14 days</div>
@@ -1566,19 +1562,25 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {usersList.map((user, idx) => (
-                  <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                {(Array.isArray(users) ? users : []).map((user, idx) => {
+                  const storageBytes = user.storage_used || 0;
+                  const storageUsedMB = (storageBytes / (1024 * 1024)).toFixed(2);
+                  const storageLimitBytes = 50 * 1024 * 1024; // 50MB
+                  const storagePercent = Math.min(100, (storageBytes / storageLimitBytes) * 100);
+
+                  return (
+                  <tr key={user.id || idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '1.2rem' }}>
-                      <div style={{ color: '#fff', fontWeight: '700', fontSize: '1rem' }}>{user.username}</div>
-                      <div style={{ color: '#ffffff', fontSize: '0.75rem', fontWeight: '500' }}>{user.email}</div>
+                      <div style={{ color: '#fff', fontWeight: '700', fontSize: '1rem' }}>{user.username || 'Unknown'}</div>
+                      <div style={{ color: '#ffffff', fontSize: '0.75rem', fontWeight: '500' }}>{user.email || 'N/A'}</div>
                     </td>
-                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.files_count}</td>
-                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.total_requests}</td>
-                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.uploads}</td>
-                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.downloads}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.files_count || 0}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.total_requests || 0}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.uploads || 0}</td>
+                    <td style={{ padding: '1.2rem', color: '#ffffff', fontWeight: '700' }}>{user.downloads || 0}</td>
                     <td style={{ padding: '1.2rem', color: '#ffffff', opacity: 0.6, fontWeight: '600' }}>50.00 MB</td>
                     <td style={{ padding: '1.2rem' }}>
-                      <div style={{ color: '#fff', fontWeight: '700', marginBottom: '8px', fontSize: '0.9rem' }}>{(user.storage_used / (1024 * 1024)).toFixed(2)} MB</div>
+                      <div style={{ color: '#fff', fontWeight: '700', marginBottom: '8px', fontSize: '0.9rem' }}>{storageUsedMB} MB</div>
                       <div style={{ 
                         height: '10px', 
                         width: '100px', 
@@ -1590,7 +1592,7 @@ export default function AdminDashboard() {
                       }}>
                         <div style={{ 
                           height: '100%', 
-                          width: `${Math.min(100, (user.storage_used / user.storage_limit) * 100)}%`, 
+                          width: `${storagePercent}%`, 
                           background: '#ffffff',
                           borderRadius: '0'
                         }} />
@@ -1598,16 +1600,16 @@ export default function AdminDashboard() {
                     </td>
                     <td style={{ padding: '1.2rem' }}>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button 
-                          onClick={() => handleToggleBlock(user.id, user.is_blocked)}
-                          style={{ 
-                            background: 'rgba(255,255,255,0.05)', 
+                        <button
+                          onClick={() => setConfirmModal({ type: user.is_blocked ? 'unblock' : 'block', user })}
+                          style={{
+                            background: 'rgba(255,255,255,0.05)',
                             backdropFilter: 'blur(10px)',
-                            border: '1px solid #ffffff', 
-                            color: '#fff', 
-                            padding: '8px 14px', 
-                            borderRadius: '8px', 
-                            fontSize: '0.75rem', 
+                            border: '1px solid #ffffff',
+                            color: '#fff',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
                             fontWeight: '700',
                             cursor: 'pointer',
                             transition: 'all 0.2s'
@@ -1617,15 +1619,15 @@ export default function AdminDashboard() {
                         >
                           {user.is_blocked ? 'UNBLOCK' : 'BLOCK'}
                         </button>
-                        <button 
-                          onClick={() => handleDeleteUser(user.id)}
-                          style={{ 
-                            background: 'rgba(239, 68, 68, 0.1)', 
-                            border: '1px solid #ef4444', 
-                            color: '#ef4444', 
-                            padding: '8px 14px', 
-                            borderRadius: '8px', 
-                            fontSize: '0.75rem', 
+                        <button
+                          onClick={() => setConfirmModal({ type: 'delete', user })}
+                          style={{
+                            background: 'rgba(239, 68, 68, 0.1)',
+                            border: '1px solid #ef4444',
+                            color: '#ef4444',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontSize: '0.75rem',
                             fontWeight: '700',
                             cursor: 'pointer',
                             transition: 'all 0.2s'
@@ -1638,7 +1640,8 @@ export default function AdminDashboard() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1782,9 +1785,14 @@ export default function AdminDashboard() {
 
           {/* Live count badge */}
           {(() => {
-            const filteredAuditLogs = auditDateMode === 'date'
-              ? audits.filter(a => a.timestamp && new Date(a.timestamp).toISOString().split('T')[0] === auditDate)
-              : audits
+            const filteredAuditLogs = (() => {
+              // Filter by date if date mode is active
+              const base = auditDateMode === 'date'
+                ? audits.filter(a => a.timestamp && new Date(a.timestamp).toISOString().split('T')[0] === auditDate)
+                : audits
+              // Always show newest first in the audit trail table
+              return [...base].reverse()
+            })()
             const showEmpty = filteredAuditLogs.length === 0
             return (
               <>
@@ -1889,11 +1897,15 @@ export default function AdminDashboard() {
                       displayStatus = sCode === "FAILURE" ? "FAILURE" : `ERROR ${sCode}`;
                     } else if (typeof sCode === 'number' && sCode < 400) {
                       statusColor = "#ffffff";
-                      statusBg = "rgba(255, 255, 255, 0.1)";
+                      statusBg = "rgba(34, 197, 94, 0.2)";
                       displayStatus = `OK ${sCode}`;
+                    } else if (log.status === "SUCCESS" || sCode === "SUCCESS") {
+                      statusColor = "#ffffff";
+                      statusBg = "rgba(34, 197, 94, 0.2)";
+                      displayStatus = "SUCCESS";
                     } else {
                       statusColor = "#ffffff";
-                      statusBg = "rgba(255, 255, 255, 0.1)";
+                      statusBg = "rgba(255, 255, 255, 0.08)";
                     }
                   } catch(e) {}
 
@@ -1924,9 +1936,15 @@ export default function AdminDashboard() {
                           borderRadius: '6px', 
                           fontSize: '0.7rem', 
                           fontWeight: '800',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-block',
                           background: statusBg,
-                          color: statusColor,
-                          border: statusBg.includes('239') ? '1px solid #ef4444' : '1px solid #ffffff'
+                          color: '#ffffff',
+                          border: statusBg.includes('239') 
+                            ? '1px solid rgba(239,68,68,0.6)' 
+                            : statusBg.includes('34, 197') 
+                              ? '1px solid rgba(34,197,94,0.5)' 
+                              : '1px solid rgba(255,255,255,0.2)'
                         }}>
                           {displayStatus}
                         </span>
@@ -1949,5 +1967,139 @@ export default function AdminDashboard() {
       )}
       </div>
     </div>
+
+    {/* ─── Glassmorphic Confirm Modal ───────────────────────────────────────── */}
+    {confirmModal && (
+      <div
+        onClick={() => setConfirmModal(null)}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.65)',
+          backdropFilter: 'blur(18px)',
+          WebkitBackdropFilter: 'blur(18px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease'
+        }}
+      >
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            background: 'rgba(15, 15, 15, 0.85)',
+            backdropFilter: 'blur(32px)',
+            WebkitBackdropFilter: 'blur(32px)',
+            border: '0.6px solid rgba(255,255,255,0.18)',
+            borderRadius: '20px',
+            padding: '2rem 2.5rem',
+            width: '380px',
+            boxShadow: '0 40px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.06)',
+            animation: 'slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}
+        >
+          {/* Icon */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.25rem' }}>
+            <div style={{
+              width: '52px', height: '52px', borderRadius: '14px',
+              background: confirmModal.type === 'delete' ? 'rgba(239,68,68,0.12)' : 'rgba(255,255,255,0.06)',
+              border: confirmModal.type === 'delete' ? '0.6px solid rgba(239,68,68,0.4)' : '0.6px solid rgba(255,255,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem'
+            }}>
+              {confirmModal.type === 'delete' ? '🗑' : confirmModal.type === 'block' ? '🔒' : '🔓'}
+            </div>
+          </div>
+
+          {/* Title */}
+          <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
+            <div style={{ fontSize: '1.25rem', fontWeight: '900', color: '#ffffff', letterSpacing: '-0.03em' }}>
+              {confirmModal.type === 'delete' ? 'Delete User' :
+               confirmModal.type === 'block' ? 'Block User' : 'Unblock User'}
+            </div>
+          </div>
+
+          {/* Body */}
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <p style={{ fontSize: '0.88rem', color: 'rgba(255,255,255,0.55)', fontWeight: '500', lineHeight: 1.6, margin: 0 }}>
+              {confirmModal.type === 'delete'
+                ? <>Are you sure you want to permanently delete <strong style={{ color: '#ffffff' }}>{confirmModal.user.username}</strong>? This cannot be undone.</>
+                : confirmModal.type === 'block'
+                  ? <>Block <strong style={{ color: '#ffffff' }}>{confirmModal.user.username}</strong>? They will lose access immediately.</>
+                  : <>Unblock <strong style={{ color: '#ffffff' }}>{confirmModal.user.username}</strong>? They will regain full access.</>
+              }
+            </p>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => setConfirmModal(null)}
+              style={{
+                flex: 1, padding: '12px', borderRadius: '10px',
+                background: 'rgba(255,255,255,0.06)',
+                border: '0.6px solid rgba(255,255,255,0.15)',
+                color: '#ffffff', fontWeight: '700', fontSize: '0.85rem',
+                cursor: 'pointer', transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirm}
+              style={{
+                flex: 1, padding: '12px', borderRadius: '10px',
+                background: confirmModal.type === 'delete' ? 'rgba(239,68,68,0.2)' : '#ffffff',
+                border: confirmModal.type === 'delete' ? '0.6px solid rgba(239,68,68,0.5)' : 'none',
+                color: confirmModal.type === 'delete' ? '#ef4444' : '#000000',
+                fontWeight: '900', fontSize: '0.85rem',
+                cursor: 'pointer', transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.85'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >
+              {confirmModal.type === 'delete' ? 'Delete' :
+               confirmModal.type === 'block' ? 'Block' : 'Unblock'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ─── Toast Notification ───────────────────────────────────────────────── */}
+    {toast && (
+      <div style={{
+        position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 99999,
+        background: 'rgba(15, 15, 15, 0.92)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        border: toast.variant === 'error'
+          ? '0.6px solid rgba(239,68,68,0.4)'
+          : '0.6px solid rgba(255,255,255,0.18)',
+        borderRadius: '14px',
+        padding: '14px 20px',
+        display: 'flex', alignItems: 'center', gap: '12px',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+        animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        maxWidth: '340px'
+      }}>
+        <div style={{
+          width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
+          background: toast.variant === 'error' ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+          border: toast.variant === 'error' ? '0.6px solid rgba(239,68,68,0.3)' : '0.6px solid rgba(34,197,94,0.3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem'
+        }}>
+          {toast.variant === 'error' ? '✗' : '✓'}
+        </div>
+        <span style={{ color: '#ffffff', fontWeight: '700', fontSize: '0.88rem', letterSpacing: '-0.01em' }}>
+          {toast.message}
+        </span>
+      </div>
+    )}
+
+    <style>{`
+      @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.97) } to { opacity: 1; transform: translateY(0) scale(1) } }
+      @keyframes slideInRight { from { opacity: 0; transform: translateX(30px) } to { opacity: 1; transform: translateX(0) } }
+    `}</style>
+    </>
   )
 }
