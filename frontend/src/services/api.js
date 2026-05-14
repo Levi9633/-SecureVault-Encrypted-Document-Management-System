@@ -89,6 +89,17 @@ export const logout = async () => {
 export const syncUser = (username, email, password) =>
   API.post('/auth/sync-user', { username, email, password })
 
+export const getProfile = () => API.get('/auth/profile')
+
+export const changePassword = async (newPassword) => {
+  // 1. Update Supabase Auth password
+  const { error } = await supabase.auth.updateUser({ password: newPassword })
+  if (error) throw error
+  
+  // 2. Sync to our database
+  return API.post('/auth/change-password', { new_password: newPassword })
+}
+
 // ─── File Endpoints ───────────────────────────────────────────────────────────
 export const uploadFile = (file, file_password, onProgress) => {
   const formData = new FormData()

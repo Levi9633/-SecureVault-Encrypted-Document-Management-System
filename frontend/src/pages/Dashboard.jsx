@@ -8,12 +8,6 @@ export default function Dashboard() {
   const username = session.username || 'User'
   const role = session.role || 'user'
 
-  const logout = async () => {
-    try { await apiLogout() } catch (_) {}
-    sessionStorage.removeItem('session')
-    nav('/login')
-  }
-
   const userActions = [
     { 
       icon: (
@@ -112,22 +106,34 @@ export default function Dashboard() {
         </h1>
         <button 
           className="btn btn-outline btn-sm" 
-          onClick={logout} 
+          onClick={() => nav('/profile')} 
           style={{ 
             position: 'fixed',
             top: '2rem',
             right: '2rem',
             zIndex: 1000,
-            width: 'auto', 
-            padding: '0.5rem 1rem', 
+            width: '40px', 
+            height: '40px',
+            padding: '0', 
+            borderRadius: '50%',
             border: '1.5px solid #ffffff', 
             color: '#ffffff', 
-            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             background: 'rgba(0,0,0,0.3)',
-            backdropFilter: 'blur(10px)'
+            backdropFilter: 'blur(10px)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
           }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(0,0,0,0.3)'}
+          title="User Profile"
         >
-          Logout
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
         </button>
       </div>
 

@@ -8,6 +8,7 @@ const Signup = React.lazy(() => import('./pages/Signup'))
 const Dashboard = React.lazy(() => import('./pages/Dashboard'))
 const Upload = React.lazy(() => import('./pages/Upload'))
 const Files = React.lazy(() => import('./pages/Files'))
+const Profile = React.lazy(() => import('./pages/Profile'))
 const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard'))
 
 function PrivateRoute({ children }) {
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/upload" element={<PrivateRoute><Upload /></PrivateRoute>} />
           <Route path="/files" element={<PrivateRoute><Files /></PrivateRoute>} />
+          <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
           <Route path="/admin/*" element={<PrivateRoute><AdminDashboard /></PrivateRoute>} />
         </Routes>
       </Suspense>

@@ -509,6 +509,14 @@ export default function AdminDashboard() {
         input[type="date"]::-webkit-calendar-picker-indicator:hover {
           opacity: 1;
         }
+        .hover-row { transition: background 0.2s; }
+        .hover-row:hover { background: rgba(255,255,255,0.05) !important; }
+        .hover-btn-block { transition: all 0.2s; background: rgba(255,255,255,0.05); border: 1px solid #ffffff; }
+        .hover-btn-block:hover { background: rgba(255,255,255,0.15) !important; }
+        .hover-btn-delete { transition: all 0.2s; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; }
+        .hover-btn-delete:hover { background: rgba(239, 68, 68, 0.2) !important; }
+        .hover-endpoint { transition: background 0.2s; }
+        .hover-endpoint:hover { background: rgba(255,255,255,0.12) !important; }
       `}</style>
 
       <div className="header" style={{ margin: '0.1rem 0', paddingBottom: '0', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1569,7 +1577,7 @@ export default function AdminDashboard() {
                   const storagePercent = Math.min(100, (storageBytes / storageLimitBytes) * 100);
 
                   return (
-                  <tr key={user.id || idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                  <tr key={user.id || idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)' }} className="hover-row">
                     <td style={{ padding: '1.2rem' }}>
                       <div style={{ color: '#fff', fontWeight: '700', fontSize: '1rem' }}>{user.username || 'Unknown'}</div>
                       <div style={{ color: '#ffffff', fontSize: '0.75rem', fontWeight: '500' }}>{user.email || 'N/A'}</div>
@@ -1602,38 +1610,29 @@ export default function AdminDashboard() {
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           onClick={() => setConfirmModal({ type: user.is_blocked ? 'unblock' : 'block', user })}
+                          className="hover-btn-block"
                           style={{
-                            background: 'rgba(255,255,255,0.05)',
-                            backdropFilter: 'blur(10px)',
-                            border: '1px solid #ffffff',
                             color: '#fff',
                             padding: '8px 14px',
                             borderRadius: '8px',
                             fontSize: '0.75rem',
                             fontWeight: '700',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
+                            cursor: 'pointer'
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                         >
                           {user.is_blocked ? 'UNBLOCK' : 'BLOCK'}
                         </button>
                         <button
                           onClick={() => setConfirmModal({ type: 'delete', user })}
+                          className="hover-btn-delete"
                           style={{
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid #ef4444',
                             color: '#ef4444',
                             padding: '8px 14px',
                             borderRadius: '8px',
                             fontSize: '0.75rem',
                             fontWeight: '700',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
+                            cursor: 'pointer'
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
                         >
                           DELETE
                         </button>
@@ -1910,7 +1909,7 @@ export default function AdminDashboard() {
                   } catch(e) {}
 
                   return (
-                    <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)', transition: 'background 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+                    <tr key={idx} style={{ borderBottom: '0.6px solid rgba(255,255,255,0.3)' }} className="hover-row">
                       <td style={{ padding: '1.2rem', color: '#ffffff', opacity: 0.5, fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                         {new Date(log.timestamp).toLocaleString()}
                       </td>

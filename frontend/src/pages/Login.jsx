@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../services/supabase'
+import { getProfile } from '../services/api'
 import GlassSurface from '../components/GlassSurface'
 
 export default function Login() {
@@ -51,7 +52,23 @@ export default function Login() {
       const role = user.user_metadata?.role || 'user'
       const token = data.session.access_token
 
-      sessionStorage.setItem('session', JSON.stringify({ username, email: user.email, role, token }))
+      // Pre-fetch profile stats immediately so the Profile page doesn't have to load
+      let profileStats = null;
+      try {
+        const res = await fetch('http://localhost:8000/auth/profile', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        if (res.ok) {
+          profileStats = await res.json()
+        }
+      } catch (e) {
+        console.warn("Failed to pre-fetch profile stats:", e)
+      }
+
+      sessionStorage.setItem('session', JSON.stringify({ 
+        username, email: user.email, role, token, profileStats 
+      }))
+      
       setStatus({ msg: '✔ Access Granted', type: 'success' })
       setTimeout(() => nav('/dashboard'), 800)
     } catch (err) {
