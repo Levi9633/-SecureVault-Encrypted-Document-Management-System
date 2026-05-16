@@ -91,6 +91,13 @@ def db_update(table: str, field: str, value: str, data: dict):
 
 import uuid
 import json
+import threading
+
+def _insert_audit_log_async(data: dict):
+    try:
+        db_insert(AUDIT_TABLE, data)
+    except Exception as e:
+        print(f"[AUDIT LOG FAILED] {e}")
 
 def log_audit_event(username: str, action: str, request=None, status: str = "SUCCESS", file_info: dict = None, extra: dict = None):
     try:
@@ -117,9 +124,9 @@ def log_audit_event(username: str, action: str, request=None, status: str = "SUC
             "details": json.dumps(details_dict),
             "timestamp": datetime.datetime.utcnow().isoformat()
         }
-        db_insert(AUDIT_TABLE, data)
+        threading.Thread(target=_insert_audit_log_async, args=(data,), daemon=True).start()
     except Exception as e:
-        print(f"[AUDIT LOG FAILED] {e}")
+        print(f"[AUDIT LOG PREP FAILED] {e}")
 
 def storage_upload(bucket: str, path: str, data: bytes, content_type: str = "application/octet-stream"):
     import urllib.parse

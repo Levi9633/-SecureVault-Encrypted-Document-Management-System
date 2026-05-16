@@ -19,20 +19,28 @@ export default function Login() {
 
     // Special case: hardcoded Admin
     if (form.email === 'admin@vaultsync.com') {
-      // Admin bypasses Supabase Auth - call our backend
       try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 8000)
         const res = await fetch('http://localhost:8000/auth/admin-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: form.password })
+          body: JSON.stringify({ password: form.password }),
+          signal: controller.signal
         })
+        clearTimeout(timeoutId)
         const data = await res.json()
         if (!res.ok) throw new Error(data.detail || 'Wrong password')
         sessionStorage.setItem('session', JSON.stringify(data))
         setStatus({ msg: '✔ Admin Access Granted', type: 'success' })
         setTimeout(() => nav('/dashboard'), 800)
       } catch (err) {
-        setStatus({ msg: `❌ ${err.message}`, type: 'error' })
+        const msg = err.name === 'AbortError'
+          ? 'Server is taking too long. Check that the backend is running.'
+          : err.message === 'Failed to fetch'
+          ? 'Cannot reach server. Make sure the backend is running on port 8000.'
+          : err.message
+        setStatus({ msg: `❌ ${msg}`, type: 'error' })
       } finally {
         setLoading(false)
       }
@@ -52,21 +60,8 @@ export default function Login() {
       const role = user.user_metadata?.role || 'user'
       const token = data.session.access_token
 
-      // Pre-fetch profile stats immediately so the Profile page doesn't have to load
-      let profileStats = null;
-      try {
-        const res = await fetch('http://localhost:8000/auth/profile', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        })
-        if (res.ok) {
-          profileStats = await res.json()
-        }
-      } catch (e) {
-        console.warn("Failed to pre-fetch profile stats:", e)
-      }
-
       sessionStorage.setItem('session', JSON.stringify({ 
-        username, email: user.email, role, token, profileStats 
+        username, email: user.email, role, token
       }))
       
       setStatus({ msg: '✔ Access Granted', type: 'success' })

@@ -106,52 +106,97 @@ export default function AdminDashboard() {
 
   const todayStr = new Date().toISOString().split('T')[0]
 
+  // Trigger the right fetch when the tab changes (or on first load)
   useEffect(() => {
-    fetchData()
-    const isToday = selectedDate === todayStr
-    let interval
-    if (isToday) {
-      interval = setInterval(fetchData, 60000)
-    }
-    return () => { if (interval) clearInterval(interval) }
-  }, [selectedDate])
+    if (currentTab === 'users') fetchUsers()
+    else if (currentTab === 'audits') fetchAuditLogs()
+    else fetchAnalytics()
+  }, [currentTab])
 
-  const fetchData = async () => {
+  // ── Per-tab data fetching — only fetch what the active tab needs ──────────
+  const [tabLoaded, setTabLoaded] = useState({})  // which tabs have been loaded
+  const [tabError, setTabError]   = useState({})  // per-tab error messages
+
+  const fetchAnalytics = async (force = false) => {
+    if (!force && tabLoaded.analytics) return
+    setLoading(true)
     try {
-      const [sRes, uRes, aRes, sbRes] = await Promise.all([
+      const [sRes, aRes, sbRes] = await Promise.all([
         getAnalytics(),
-        getUsers(),
         getAudits(),
         getSupabaseAudits()
       ])
-      
       const localAudits = aRes.data || []
       const sbAuditsRaw = sbRes.data || []
-
       const sbAuditsFormatted = sbAuditsRaw.map(a => ({
         username: a.payload?.actor_username || a.payload?.actor_email || 'System',
         action: `Auth: ${a.payload?.action || 'Event'}`,
         details: a.payload?.log_type || '',
         timestamp: a.created_at
       }))
-
-      // Sort ascending for charts (chronological order)
       const combined = [...localAudits, ...sbAuditsFormatted].sort((a, b) =>
         new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
       )
-
       setStats(sRes.data)
-      setUsers(uRes.data)
       setAudits(combined)
+      setTabLoaded(prev => ({ ...prev, analytics: true }))
+      setTabError(prev => ({ ...prev, analytics: null }))
     } catch (err) {
-      console.error('[Admin] fetchData error:', err)
-      if (err.response?.status === 403 || err.response?.status === 401) {
-        setSessionExpired(true)
-      }
-    } finally {
-      setLoading(false)
-    }
+      console.error('[Admin] fetchAnalytics error:', err)
+      setTabError(prev => ({ ...prev, analytics: 'Failed to load analytics.' }))
+      if (err.response?.status === 403 || err.response?.status === 401) setSessionExpired(true)
+    } finally { setLoading(false) }
   }
+
+  const fetchUsers = async (force = false) => {
+    if (!force && tabLoaded.users) return
+    setLoading(true)
+    try {
+      const uRes = await getUsers()
+      setUsers(uRes.data)
+      setTabLoaded(prev => ({ ...prev, users: true }))
+      setTabError(prev => ({ ...prev, users: null }))
+    } catch (err) {
+      console.error('[Admin] fetchUsers error:', err)
+      setTabError(prev => ({ ...prev, users: 'Failed to load users.' }))
+      if (err.response?.status === 403 || err.response?.status === 401) setSessionExpired(true)
+    } finally { setLoading(false) }
+  }
+
+  const fetchAuditLogs = async (force = false) => {
+    if (!force && tabLoaded.audits) return
+    setLoading(true)
+    try {
+      const [aRes, sbRes] = await Promise.all([getAudits(), getSupabaseAudits()])
+      const localAudits = aRes.data || []
+      const sbAuditsRaw = sbRes.data || []
+      const sbAuditsFormatted = sbAuditsRaw.map(a => ({
+        username: a.payload?.actor_username || a.payload?.actor_email || 'System',
+        action: `Auth: ${a.payload?.action || 'Event'}`,
+        details: a.payload?.log_type || '',
+        timestamp: a.created_at
+      }))
+      const combined = [...localAudits, ...sbAuditsFormatted].sort((a, b) =>
+        new Date(a.timestamp || 0) - new Date(b.timestamp || 0)
+      )
+      setAudits(combined)
+      setTabLoaded(prev => ({ ...prev, audits: true }))
+      setTabError(prev => ({ ...prev, audits: null }))
+    } catch (err) {
+      console.error('[Admin] fetchAuditLogs error:', err)
+      setTabError(prev => ({ ...prev, audits: 'Failed to load audit logs.' }))
+      if (err.response?.status === 403 || err.response?.status === 401) setSessionExpired(true)
+    } finally { setLoading(false) }
+  }
+
+  // fetchData kept for the Refresh/confirm buttons that call it
+  const fetchData = async () => {
+    const tab = currentTab
+    if (tab === 'users') await fetchUsers(true)
+    else if (tab === 'audits') await fetchAuditLogs(true)
+    else await fetchAnalytics(true)
+  }
+
 
   const formatBytes = (bytes) => {
     if (bytes === 0) return '0 B'

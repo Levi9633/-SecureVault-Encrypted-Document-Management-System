@@ -33,26 +33,33 @@ async def api_monitoring_middleware(request: Request, call_next):
     start_time = time.time()
     response = await call_next(request)
     process_time_ms = int((time.time() - start_time) * 1000)
-    
+
     path = request.url.path
-    # Skip root and static files, but allow Admin traffic to be logged since the UI updates dynamically and we want to monitor Admin actions.
+    # Skip root, static files, and auth endpoints (login/signup must be instant)
     SKIP_PATHS = ["/", "/favicon.ico"]
-    if path in SKIP_PATHS:
+    SKIP_PREFIXES = ["/auth/"]
+    if path in SKIP_PATHS or any(path.startswith(p) for p in SKIP_PREFIXES):
         return response
 
-    # Identify the user from the token if possible
+    # Cheaply extract username from JWT payload WITHOUT making a network call
     username = "Guest"
     auth_header = request.headers.get("Authorization", "")
     if auth_header:
         try:
-            from routes.auth import verify_supabase_token
+            import base64
             token = auth_header.replace("Bearer ", "")
-            user_info = verify_supabase_token(token)
-            username = user_info.get("username", "Guest")
-        except:
+            if token == "admin_bypass_token_999":
+                username = "Admin"
+            else:
+                payload_b64 = token.split(".")[1]
+                padding = 4 - len(payload_b64) % 4
+                payload_json = base64.b64decode(payload_b64 + "=" * padding).decode("utf-8")
+                payload = json.loads(payload_json)
+                meta = payload.get("user_metadata", {})
+                username = meta.get("username") or payload.get("email", "Guest").split("@")[0]
+        except Exception:
             pass
 
-    import json
     metadata = {
         "method": request.method,
         "endpoint": path,
@@ -61,7 +68,7 @@ async def api_monitoring_middleware(request: Request, call_next):
         "ip_address": request.client.host if request.client else "unknown",
         "device": request.headers.get("user-agent", "unknown")
     }
-    
+
     loop = asyncio.get_running_loop()
     import functools
     loop.run_in_executor(

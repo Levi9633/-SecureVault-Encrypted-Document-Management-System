@@ -1,0 +1,101 @@
+# SecureVault (VaultSync) - Encrypted Document Management System
+# Complete Project Report Data
+
+## 1. Project Overview & Objective
+SecureVault (also referred to as VaultSync) is an end-to-end Encrypted Document Management System. The primary goal of this project is to provide a highly secure, enterprise-grade environment where users (like doctors, patients, or businesses) can upload, store, and share sensitive documents without worrying about data breaches or unauthorized access. 
+
+## 2. Core Features
+- **Zero-Knowledge Architecture:** The server never stores the actual encryption keys or the user's file password.
+- **Dynamic Key Generation:** Keys are generated dynamically in memory during the upload/encryption process and immediately wiped.
+- **Secure Document Storage:** All documents are encrypted before being pushed to the cloud bucket.
+- **Post-Encryption Email Automation:** An automated background task sends the user a digital receipt containing their file password, ensuring they don't lose access to their encrypted files.
+- **Authentication & Authorization:** Role-based access control leveraging Supabase Auth, along with a dedicated hardcoded Admin bypass mechanism.
+- **Granular Audit Logging:** Comprehensive tracking of all actions (uploads, decryptions, API requests) including IP address, User-Agent, and process execution time.
+- **Advanced Analytics Dashboard:** An admin interface for tracking storage consumption, user activities, and monitoring potential security threats (like failed decryption attempts).
+- **Modern Glassmorphism UI:** A sleek, monochromatic, responsive user interface built using React, Vite, and custom CSS.
+
+## 3. Technology Stack
+- **Frontend:** React.js, Vite, TailwindCSS / Custom CSS (GlassSurface, LightRays components), Axios, React Router.
+- **Backend:** Python, FastAPI, Uvicorn, Cryptography (for AES & PBKDF2), smtplib (for email automation), Requests.
+- **Database & Storage:** Supabase (PostgreSQL for relational data and Audit Logs, Storage Buckets for encrypted file storage).
+- **Cryptography:** PBKDF2HMAC (Password-Based Key Derivation), AES-256-CBC (Advanced Encryption Standard).
+
+## 4. Architecture & Security Implementations
+
+### Zero-Knowledge Encryption Flow (`services/encryption.py`)
+1. **Dynamic Key Generation:** When a user uploads a file, they provide a personal file password (enforced minimum length and complexity).
+2. **Pepper and Salt:** The server combines the user password with a hardcoded `SERVER_SECRET` (pepper: `V@ultSync_0nly_S3rv3r_Kn0ws_77!`) and a randomly generated 16-byte `salt`.
+3. **PBKDF2HMAC Derivation:** Using PBKDF2HMAC (SHA256 algorithm) running through 390,000 iterations, the backend derives a highly secure 32-byte AES-256 key.
+4. **Encryption:** The file is padded using PKCS7 and encrypted using AES-256-CBC. A 16-byte Initialization Vector (IV) is used.
+5. **Storage Format:** The final encrypted file (`.enc`) is structured as: `16-byte salt` + `16-byte IV` + `Ciphertext`. The password and AES key are NEVER stored.
+6. **Memory Wipe:** The moment the encryption is complete and the file is pushed to the Supabase storage bucket, the AES key and the user's password are completely wiped from the server's RAM. 
+
+### Post-Encryption Email Automation (`services/email_service.py`)
+Since passwords are not stored on the server, losing a password means losing the file. To mitigate this:
+- Once the file is encrypted, a FastAPI `BackgroundTask` is triggered asynchronously.
+- Python `smtplib` connects to a Gmail SMTP server via TLS (Port 587).
+- It drafts a secure HTML email with a strict security warning and sends it directly to the user's registered email.
+- This email serves as an automated digital receipt, containing the exact filename and reminding them of the password they just used, acting as a secure backup without compromising server architecture.
+
+### Advanced Analytics & Auditing (`services/supabase_service.py` & `routes/admin.py`)
+- **Audit Trails:** Every upload, decryption, API request, and failed attempt is logged in an `audit_logs` table. It captures `username`, `action_type`, `status` (SUCCESS/FAILURE), `ip_address`, `device` (User-Agent), and execution time in milliseconds (`ms`).
+- **Security Monitoring:** Failed decryption attempts (wrong password) log a 'FAILURE' event, allowing admins to view real-time charts to spot potential brute-force or malicious activities.
+- **Pagination Bypass:** The backend implements a custom `db_get_all_paginated` function using Supabase Range-based headers to bypass the standard 1000-row limit for audit logs.
+- **Comprehensive User Deletion:** When an admin deletes a user, the system performs a 5-step purge: 1) Gets user info, 2) Deletes from Supabase Auth, 3) Deletes from the local `users` table, 4) Purges all files from the user's storage bucket, and 5) Wipes all related `audit_logs`.
+
+## 5. Key Security Problems Identified and Solved
+Throughout the project lifecycle, several critical security flaws were identified and resolved to achieve enterprise-grade security:
+
+- **Problem:** Key Stored with File (Risk of full data breach if storage accessed).
+  **Fix:** Keys are no longer stored. Used PBKDF2 to derive keys dynamically; only the salt and IV are stored within the `.enc` file.
+- **Problem:** Server Can See Everything (No privacy from backend admins).
+  **Fix:** Split Knowledge (Zero Trust). Final Key = hash(password + server_secret). Server alone cannot decrypt.
+- **Problem:** Key File Can Be Copied.
+  **Fix:** Removed `.key` files completely. Keys are generated dynamically only when needed.
+- **Problem:** No Access Control on Keys.
+  **Fix:** Backend verifies JWT tokens (`verify_supabase_token`) and maps users to their specific Supabase Storage buckets (named after their lowercase username).
+- **Problem:** Weak Passwords.
+  **Fix:** Utilizing strong derivation iterations (390,000 PBKDF2 iterations) to slow down brute-force attacks, and enforcing frontend password complexity (length, caps, numbers, special chars).
+- **Problem:** File Name Leakage.
+  **Fix:** Filenames are sanitized and only the `.enc` version is stored. (Note: Future improvements plan to encrypt the filename itself).
+- **Problem:** Session Hijacking on Shared Devices.
+  **Fix:** Implemented an `IdleTimer` in React.
+
+## 6. Setup and Installation Summary
+- **Prerequisites:** Node.js (v16+), Python 3.9+, Supabase Project.
+- **Backend:** Requires a Python virtual environment, installing packages from `requirements.txt` (`fastapi`, `uvicorn`, `cryptography`, `requests`, etc.), and configuring `.env` with `SUPABASE_URL` and `SUPABASE_KEY` (service role). The server runs via `uvicorn main:app --reload`.
+- **Frontend:** Requires `npm install`, configuring `.env` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, and runs via `npm run dev`.
+
+## 7. Extended Technical Implementation Details (Codebase Structure)
+To ensure a comprehensive understanding of the system's architecture, here are the low-level implementation details:
+
+### Frontend Implementation (React.js & Vite)
+- **Routing:** Handled via `react-router-dom`. Routes include `/login`, `/signup`, `/dashboard`, `/upload`, `/files`, `/profile`, and an exclusive `/admin/*` panel.
+- **State Management & Authentication:** The application uses `sessionStorage` to maintain session data. A custom `PrivateRoute` wrapper ensures unauthorized users cannot access internal routes.
+- **Axios Interceptors:** A sophisticated `api.js` service intercepts requests to automatically inject the freshest Supabase JWT token. It also intercepts 401/403 responses to automatically attempt a `supabase.auth.refreshSession()`.
+- **Idle Timeout Security:** Implemented an `IdleTimer` component globally inside `App.jsx`. If a user is inactive (no mouse movement, clicks, or keystrokes) for 12 minutes (720,000 ms), the system automatically invalidates the session and redirects to the login screen.
+- **Advanced Admin UI & Data Visualization:** The `AdminDashboard.jsx` is highly complex, utilizing the `Recharts` library (BarChart, AreaChart, PieChart) to render live analytics. It features complex frontend data-science processors (e.g., mapping raw UTC timestamps into buckets for real-time API latency tracking).
+- **Optimistic UI Updates:** Actions like deleting or blocking a user instantly update the local React state (`setUsers`) for immediate visual feedback, while syncing with the backend asynchronously.
+- **Custom Calendar Modals:** Built a fully custom, glassy date-picker calendar from scratch to allow admins to filter audit logs and analytics by specific dates without relying on generic browser `<input type="date">` elements.
+- **UI Components:** Built using specialized "Glassmorphism" components (`GlassSurface.jsx`, `ProgressModal.jsx`). The background features a dynamic, interactive `LightRays.jsx` canvas that responds to cursor movement.
+- **Lazy Loading:** All major pages (Login, Dashboard, Admin, etc.) use `React.lazy()` and `Suspense` to chunk the Javascript bundle, drastically reducing initial load times.
+
+### Backend Implementation (FastAPI & Python)
+- **IPv4 Enforcement:** `main.py` globally patches `socket.getaddrinfo` to force IPv4, fixing `WinError 10060` connection issues on certain networks.
+- **Middleware Monitoring:** A custom `@app.middleware("http")` intercepts every incoming API request. It calculates the execution time (`process_time_ms`) and extracts the IP address, User-Agent, and JWT token metadata. This data is asynchronously logged to the Supabase `audit_logs` table without blocking the HTTP response.
+- **API Routing:**
+  - `routes/auth.py`: Handles `sync-user` (syncing Supabase Auth to local DB), `admin-login` (with a hardcoded bypass password for emergencies), `profile` (fetching accurate storage stats), and `change-password`.
+  - `routes/files.py`: Manages the secure `upload`, AES encryption, `download`, and decryption. Interfaces directly with Supabase Storage. Updates user storage usage as a best-effort background task.
+  - `routes/admin.py`: Privileged endpoints providing system-wide `analytics`, `users` list, and querying `audits`. Implements a robust `delete-user` flow and user blocking mechanisms.
+- **Core Services:**
+  - `services/encryption.py`: Houses the Zero-Knowledge cryptographic logic (PBKDF2HMAC + AES-256-CBC key derivation and destruction).
+  - `services/email_service.py`: Contains the asynchronous SMTP logic to send post-encryption digital receipts.
+  - `services/supabase_service.py`: Abstracted database operations using the Supabase REST API (`requests` library), avoiding the heavy official SDK for performance. Includes the `db_get_all_paginated` logic.
+
+### Database Design (Supabase PostgreSQL)
+- **Users Table:** Serves as a local mirror of Supabase Auth, storing `user_id`, `gmail`/`email`, and `storage_used`.
+- **Storage Buckets:** Each user has their own private storage bucket named after their lowercase username, containing a `main/` folder for encrypted files.
+- **Audit Logs Table:** A critical table for enterprise compliance. Captures `username`, `action` (e.g., FILE_ENCRYPT_UPLOAD, FILE_DECRYPT, API_REQUEST), `details` (JSON containing IP, device, execution ms, status), and `timestamp`.
+
+---
+This document contains the complete technical architecture, feature set, problem-solving journey, codebase structure, database design, and technology stack of the SecureVault (VaultSync) project. It is structured to provide all necessary details for generating a comprehensive 15-20 page internship project report, including sections suitable for System Architecture, Data Flow Diagrams, Implementation Details, and Security Analysis.

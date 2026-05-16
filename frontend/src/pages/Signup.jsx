@@ -40,8 +40,8 @@ export default function Signup() {
       })
       if (error) throw error
 
-      // Tell FastAPI to add user to public.users table so they appear in Admin panel
-      await syncUser(form.username, form.email, form.password).catch(() => {})
+      // Fire-and-forget: sync user to DB in background, never blocks signup
+      syncUser(form.username, form.email, form.password).catch(() => {})
 
       // If email confirmation is ON, Supabase returns a user but no session
       if (data.session) {

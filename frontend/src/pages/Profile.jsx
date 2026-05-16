@@ -7,9 +7,35 @@ export default function Profile() {
   const nav = useNavigate()
   const session = JSON.parse(sessionStorage.getItem('session') || '{}')
   
-  const [profileData, setProfileData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  
+  // Show basic session data instantly, then fetch detailed stats in background
+  const [profileData, setProfileData] = useState({
+    username: session.username || 'User',
+    email: session.email || '',
+    role: session.role || 'user',
+    storage_used: 0,
+    storage_limit: 52428800,
+    files_count: 0,
+  })
+  const [loading, setLoading] = useState(false)  // no initial spinner — show instantly
+  const [statsLoading, setStatsLoading] = useState(session.role !== 'admin')
+
+  useEffect(() => {
+    // Admins don't have file storage — skip fetching
+    if (session.role === 'admin') { setStatsLoading(false); return }
+    // Fetch storage stats in background after the page renders
+    const fetchStats = async () => {
+      try {
+        const res = await getProfile()
+        setProfileData(res.data)
+      } catch (err) {
+        console.warn('Could not load storage stats', err)
+      } finally {
+        setStatsLoading(false)
+      }
+    }
+    fetchStats()
+  }, [])
+
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [pwdStatus, setPwdStatus] = useState({ msg: '', type: '' })
@@ -17,25 +43,6 @@ export default function Profile() {
   const [isFocused, setIsFocused] = useState({ new: false, confirm: false })
   const [showPasswordForm, setShowPasswordForm] = useState(false)
 
-  useEffect(() => {
-    if (session.profileStats) {
-      setProfileData(session.profileStats)
-      setLoading(false)
-    } else {
-      fetchProfile()
-    }
-  }, [])
-
-  const fetchProfile = async () => {
-    try {
-      const res = await getProfile()
-      setProfileData(res.data)
-    } catch (err) {
-      console.error('Failed to load profile', err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleLogout = async () => {
     try { await apiLogout() } catch (_) {}
